@@ -10,11 +10,11 @@
    { "suggestions": [{ "label": "Add unit tests", "prompt": "Add unit tests for the parser" }] }
    ```
 
-2. 解析结果（最多两条）写入会话日志的自定义事件 `next-suggestions/ready`，并由同名 projection `nextSuggestions` 折叠成视图。
+2. 解析结果（最多三条）写入会话日志的自定义事件 `next-suggestions/ready`，并由同名 projection `nextSuggestions` 折叠成视图。
 3. 输入框上方的插槽 `conversation.input.dock` 渲染这些建议：
    - 点击左侧文案：把完整指令填入输入框，由你自己继续编辑（会替换当前草稿）。
    - 点击 `↑`：直接发送这条指令；宿主正忙（审批、提交中）时只填入不发送。
-   - 点击最右侧 `›`：隐藏本轮建议。
+   - 建议放不下时，两端出现圆形箭头：点右侧 `›` 横向滑到最右，滑到最右后左侧出现 `‹`，点它回到最左。箭头只在对应方向确实还有内容时出现，滚动条本身隐藏。
 
 代理运行期间不显示建议；新一轮开始时上一轮的建议会被清空并取消未完成的模型请求，因此不会闪回上一条。子会话（`session.header.origin === 'subagent'`）不产生建议，避免放大请求量。
 
