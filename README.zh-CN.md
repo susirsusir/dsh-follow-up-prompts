@@ -1,4 +1,4 @@
-# dsh-next-suggestions
+# dsh-follow-up-prompts
 
 [English](README.md) | 简体中文
 
@@ -29,7 +29,7 @@
 把整个目录作为 bundle 安装（本地目录安装是软链接，改完源码重启即生效）：
 
 ```
-plugin_manager install_bundle target=/absolute/path/to/dsh-next-suggestions
+plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 ```
 
 然后重启 DeepSeek Harness，让 Host 与 Client 两半都加载。
@@ -38,8 +38,8 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-next-suggestions
 
 | 半边 | 文件 | 职责 |
 | --- | --- | --- |
-| Host | `index.js` | 按会话保留本轮的用户请求与助手回答，在 `turn/end`（`reason.kind === "completed"`）后调用一次模型，把 `next-suggestions/ready` 写入会话日志。 |
-| Host | `index.js` | 把该事件折叠成 `nextSuggestions` projection，客户端读的就是它。 |
+| Host | `index.js` | 按会话保留本轮的用户请求与助手回答，在 `turn/end`（`reason.kind === "completed"`）后调用一次模型，把 `follow-up-prompts/ready` 写入会话日志。 |
+| Host | `index.js` | 把该事件折叠成 `followUpPrompts` projection，客户端读的就是它。 |
 | Client | `client.js` | 在 `conversation.input.dock`（order 30）渲染卡片，只用主题 token 上色。 |
 
 细节：

@@ -1,4 +1,4 @@
-# dsh-next-suggestions
+# dsh-follow-up-prompts
 
 English | [简体中文](README.zh-CN.md)
 
@@ -29,7 +29,7 @@ Each suggestion is a single piece of text: what you read on the chip is exactly 
 Install the folder as a bundle (a local folder install is linked, so edits to the source take effect after a restart):
 
 ```
-plugin_manager install_bundle target=/absolute/path/to/dsh-next-suggestions
+plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 ```
 
 Then restart DeepSeek Harness so the Host and Client halves load.
@@ -38,8 +38,8 @@ Then restart DeepSeek Harness so the Host and Client halves load.
 
 | Half | File | Responsibility |
 | --- | --- | --- |
-| Host | `index.js` | Keeps the completed turn's user/assistant text per session, calls the model once after `turn/end` (`reason.kind === "completed"`), appends `next-suggestions/ready` to the session log. |
-| Host | `index.js` | Folds that event into the `nextSuggestions` projection, which is what the client reads. |
+| Host | `index.js` | Keeps the completed turn's user/assistant text per session, calls the model once after `turn/end` (`reason.kind === "completed"`), appends `follow-up-prompts/ready` to the session log. |
+| Host | `index.js` | Folds that event into the `followUpPrompts` projection, which is what the client reads. |
 | Client | `client.js` | Renders the chips in `conversation.input.dock` (order 30), using theme tokens only. |
 
 Details:
