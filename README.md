@@ -12,9 +12,11 @@ After every completed turn the plugin asks the session's own model for up to thr
         └──────────────────────────────────┴───┘ └──────────────────────────────┴───┘ ╰───╯ ╰───╯
 ```
 
-Each suggestion is a single piece of text: what you read on the chip is exactly what gets sent. Prompts stay under 50 characters, so each chip is one fixed-height line showing the whole instruction without an ellipsis. Chip width follows the text, so chips are not equally wide.
+Each suggestion is a single piece of text: what you read on the chip is exactly what gets sent. Prompts stay under 40 characters; longer ones are cut at 40 characters with an ellipsis on the chip, and the full text is shown in the hover card. Chip width follows the text, so chips are not equally wide.
 
 - **Click the text** — the instruction is placed into the composer draft; edit it before sending.
+- **Double-click the text** — sends that instruction right away, without stopping in the draft.
+- **Hover a chip** — after a moment a card appears above it with the full instruction and the rules of use (`Click to add to the input (double-click to send) · ↑ sends now`). The card is as wide as its content up to the composer width and never truncates; it ignores the pointer and disappears when you move away.
 - **Click ↑** — the instruction is sent immediately.
 - **Click › / ‹** — when the chips do not fit, the row scrolls sideways. The right arrow jumps to the last suggestion, the left arrow jumps back to the first. Each arrow only appears when there really is more content in that direction; the scrollbar itself stays hidden.
 - **Hover, then click ×** — hides the row for the current turn. `Esc` does the same.

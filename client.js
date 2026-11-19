@@ -5,10 +5,26 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const { useCallback, useEffect, useRef, useState } = React
 
+    // 浮层必须挂到 body 上：dock 容器会裁剪超出其范围的定位元素。
+    // 宿主没有暴露 react-dom 时退化为不显示浮层，其余能力照常。
+    let createPortal = null
+    try {
+      const ReactDOM = require('react-dom')
+      if (ReactDOM !== null && typeof ReactDOM.createPortal === 'function') createPortal = ReactDOM.createPortal
+    } catch {
+      createPortal = null
+    }
+
     /** 本插件在 locale 服务里的命名空间。 */
     const NS = 'follow-up-prompts'
     /** 与 Host 半保持一致：读取建议的 projection key。 */
     const PROJECTION_KEY = 'followUpPrompts'
+    /** 卡片上最多显示的字符数，超出截断成省略号，完整文案交给悬停浮层。 */
+    const MAX_CARD_CHARS = 40
+    /** 悬停多久后弹出浮层，避免鼠标划过时闪一下。 */
+    const HINT_DELAY = 250
+    /** 单击后等多久再填入草稿：这段时间内的第二击按双击（直接发送）处理。 */
+    const CLICK_DELAY = 250
 
     /** 组件内文案兜底（locale 未注册时也能显示英文）。 */
     const FALLBACK = {
@@ -18,6 +34,7 @@ window.__ModuleLoader__.load({
       'suggestion.dismiss': 'Hide these suggestions',
       'nav.prev': 'Scroll suggestions left',
       'nav.next': 'Scroll suggestions right',
+      'hint.rule': 'Click to add to the input (double-click to send) · ↑ sends now',
     }
 
     /** 两类词典；扁平点分 key，与 locale 服务约定一致。 */
@@ -28,6 +45,7 @@ window.__ModuleLoader__.load({
       'suggestion.dismiss': 'Hide these suggestions',
       'nav.prev': 'Scroll suggestions left',
       'nav.next': 'Scroll suggestions right',
+      'hint.rule': 'Click to add to the input (double-click to send) · ↑ sends now',
     }
     const zh = {
       'suggestions.label': '后续指令建议',
@@ -36,6 +54,7 @@ window.__ModuleLoader__.load({
       'suggestion.dismiss': '收起这些建议',
       'nav.prev': '向左查看更多建议',
       'nav.next': '向右查看更多建议',
+      'hint.rule': '点击添加到输入框（双击以选择并发送）· ↑ 立即发送',
     }
 
     const CSS = [
@@ -63,9 +82,21 @@ window.__ModuleLoader__.load({
       '.nsx-bar:hover .nsx-dismiss,.nsx-dismiss:focus-visible{opacity:1;pointer-events:auto;}',
       '.nsx-dismiss:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       '@media (prefers-reduced-motion:no-preference){.nsx-card{animation:nsx-in 140ms ease-out;}@keyframes nsx-in{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}}',
+      // 悬停浮层：完整文案 + 操作规则。挂到 body 上，宽度随内容，最大与对话框同宽，不限行数。
+      '.nsx-hint{position:fixed;z-index:2147483000;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:10px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-specific-menu);box-shadow:var(--dsw-elevation-panel);pointer-events:none;opacity:0;transition:opacity 120ms ease;}',
+      '.nsx-hint-visible{opacity:1;}',
+      '.nsx-hint-text{font-size:15px;line-height:22px;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;}',
+      '.nsx-hint-rule{font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary);}',
       // 窄屏没有外侧空间：箭头压在滚动区域两端，用 padding 让内容不被盖住。
       '@media (max-width:600px){.nsx-nav-prev{left:0;}.nsx-nav-next{right:0;}.nsx-viewport{padding:0 28px;}}',
     ].join('')
+
+    /** 按字符截断卡片文案：超过上限时保留完整前缀并补省略号。 */
+    function clipCardText(text) {
+      const chars = Array.from(text)
+      if (chars.length <= MAX_CARD_CHARS) return text
+      return `${chars.slice(0, MAX_CARD_CHARS).join('')}…`
+    }
 
     /** 向上箭头。 */
     function ArrowUpIcon() {
@@ -147,6 +178,20 @@ window.__ModuleLoader__.load({
       const [edges, setEdges] = useState({ left: false, right: false })
       /** 横向滚动容器。 */
       const viewportRef = useRef(null)
+      /** 整条建议条：用来取对话框宽度，作为浮层的最大宽度。 */
+      const dockRef = useRef(null)
+      /** 浮层节点：渲染后据其实际宽度校正水平位置。 */
+      const hintRef = useRef(null)
+      /** 悬停浮层：{ text, anchor, base, maxRight, bottom }；null 表示不显示。 */
+      const [hint, setHint] = useState(null)
+      /** 浮层最终的水平位置。 */
+      const [hintLeft, setHintLeft] = useState(0)
+      /** 浮层是否已完成定位：定位前透明，避免先跳到错位再回弹。 */
+      const [hintShown, setHintShown] = useState(false)
+      /** 悬停计时器。 */
+      const hintTimer = useRef(null)
+      /** 单击计时器：在 CLICK_DELAY 内没等到第二击就当作单击。 */
+      const clickTimer = useRef(null)
 
       const hidden = dismissed !== null && dismissed.sessionId === sessionId && dismissed.turn === turn
 
@@ -243,6 +288,67 @@ window.__ModuleLoader__.load({
         }
       }, [draft, phase, pendingSend, inputActions])
 
+      /** 收起浮层并取消未触发的悬停计时。 */
+      const hideHint = useCallback(() => {
+        if (hintTimer.current !== null) {
+          clearTimeout(hintTimer.current)
+          hintTimer.current = null
+        }
+        setHintShown(false)
+        setHint(null)
+      }, [])
+
+      /** 悬停 HINT_DELAY 后在卡片上方弹出浮层；拿不到 portal 时静默跳过。 */
+      const showHint = useCallback((node, text) => {
+        if (createPortal === null || node === null || node === undefined) return
+        if (hintTimer.current !== null) clearTimeout(hintTimer.current)
+        hintTimer.current = setTimeout(() => {
+          hintTimer.current = null
+          const rect = node.getBoundingClientRect()
+          const dockRect = dockRef.current !== null ? dockRef.current.getBoundingClientRect() : null
+          const base = dockRect !== null && dockRect.width > 0 ? dockRect.left : rect.left
+          const maxRight = dockRect !== null && dockRect.width > 0 ? dockRect.right : rect.left + rect.width
+          // 上方空间不足时改为在卡片下方展开，避免浮层跑出视口。
+          const place = rect.top >= 160 ? 'above' : 'below'
+          setHintShown(false)
+          setHintLeft(rect.left)
+          setHint({
+            text,
+            anchor: rect,
+            base,
+            maxRight,
+            place,
+            edge: place === 'above' ? window.innerHeight - rect.top + 8 : rect.bottom + 8,
+          })
+        }, HINT_DELAY)
+      }, [])
+
+      // 浮层宽度随内容变化，渲染后按实际宽度把它拉回对话框范围内，再显形。
+      useEffect(() => {
+        if (hint === null) return undefined
+        const node = hintRef.current
+        if (node === null) return undefined
+        const width = node.getBoundingClientRect().width
+        let left = hint.anchor.left
+        if (left + width > hint.maxRight) left = hint.maxRight - width
+        if (left < hint.base) left = hint.base
+        if (Math.abs(left - hintLeft) > 0.5) {
+          setHintLeft(left)
+          return undefined
+        }
+        setHintShown(true)
+        return undefined
+      }, [hint, hintLeft])
+
+      // 卸载时清掉两个计时器，避免离开会话后还回调。
+      useEffect(
+        () => () => {
+          if (hintTimer.current !== null) clearTimeout(hintTimer.current)
+          if (clickTimer.current !== null) clearTimeout(clickTimer.current)
+        },
+        [],
+      )
+
       const fill = useCallback(
         (prompt) => {
           inputActions.setDraft(prompt)
@@ -273,15 +379,36 @@ window.__ModuleLoader__.load({
         cards.push(
           h(
             'div',
-            { key: `${turn}-${index}`, className: 'nsx-card' },
+            {
+              key: `${turn}-${index}`,
+              className: 'nsx-card',
+              onMouseEnter: (event) => showHint(event.currentTarget, text),
+              onMouseLeave: hideHint,
+            },
             h(
               'button',
               {
                 type: 'button',
                 className: 'nsx-label',
-                onClick: () => fill(text),
+                // 单击先等一拍：这段时间里出现第二击就说明用户要的是双击发送。
+                onClick: () => {
+                  if (clickTimer.current !== null) clearTimeout(clickTimer.current)
+                  clickTimer.current = setTimeout(() => {
+                    clickTimer.current = null
+                    fill(text)
+                  }, CLICK_DELAY)
+                },
+                onDoubleClick: () => {
+                  if (clickTimer.current !== null) {
+                    clearTimeout(clickTimer.current)
+                    clickTimer.current = null
+                  }
+                  sendNow(text)
+                },
+                onFocus: (event) => showHint(event.currentTarget, text),
+                onBlur: hideHint,
               },
-              text,
+              clipCardText(text),
             ),
             h('span', { className: 'nsx-divider', 'aria-hidden': true }),
             h(
@@ -300,9 +427,30 @@ window.__ModuleLoader__.load({
       }
       if (cards.length === 0) return null
 
+      const hintNode =
+        hint !== null && createPortal !== null
+          ? createPortal(
+              h(
+                'div',
+                {
+                  ref: hintRef,
+                  className: hintShown ? 'nsx-hint nsx-hint-visible' : 'nsx-hint',
+                  role: 'tooltip',
+                  style:
+                    hint.place === 'above'
+                      ? { left: `${hintLeft}px`, bottom: `${hint.edge}px`, maxWidth: `${hint.maxRight - hint.base}px` }
+                      : { left: `${hintLeft}px`, top: `${hint.edge}px`, maxWidth: `${hint.maxRight - hint.base}px` },
+                },
+                h('div', { className: 'nsx-hint-text' }, hint.text),
+                h('div', { className: 'nsx-hint-rule' }, translate('hint.rule')),
+              ),
+              document.body,
+            )
+          : null
+
       return h(
         'div',
-        { className: 'nsx-dock' },
+        { className: 'nsx-dock', ref: dockRef },
         h('style', { key: 'nsx-style' }, CSS),
         h(
           'div',
@@ -350,6 +498,7 @@ window.__ModuleLoader__.load({
             h(CloseIcon),
           ),
         ),
+        hintNode,
       )
     }
 

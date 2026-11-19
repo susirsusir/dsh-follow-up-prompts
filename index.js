@@ -44,7 +44,7 @@ const SYSTEM_PROMPT = [
   'Rules:',
   '- Read the user request and the assistant answer below.',
   '- Each suggestion is one complete instruction the user can send as-is: what the user reads is exactly what gets sent.',
-  '- Start with a verb, keep it under 50 characters, and write it in the same language as the user request.',
+  '- Start with a verb, keep it under 40 characters, and write it in the same language as the user request.',
   '- Never repeat the previous request, never restate what was just completed, never add explanations.',
   '- Return 2 or 3 distinct suggestions, ordered by how likely the user wants them next.',
   '- Reply with JSON only, no markdown fence: {"suggestions":[{"prompt":"..."}]}',
