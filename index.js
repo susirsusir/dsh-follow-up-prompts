@@ -33,8 +33,7 @@ const EVENT_TYPE = 'next-suggestions/ready'
 const REQUEST_TIMEOUT_MS = 20_000
 /** 最多保留三条建议；超出后由客户端横向滚动展示。 */
 const MAX_SUGGESTIONS = 3
-/** 标题、正文、上下文的长度上限，避免把整轮长文塞进请求。 */
-const MAX_LABEL_CHARS = 60
+/** 单条建议与上下文的长度上限，避免把整轮长文塞进请求。 */
 const MAX_PROMPT_CHARS = 400
 const USER_EXCERPT_CHARS = 2_000
 const ASSISTANT_EXCERPT_CHARS = 4_000
@@ -44,12 +43,11 @@ const SYSTEM_PROMPT = [
   '',
   'Rules:',
   '- Read the user request and the assistant answer below.',
-  '- Each suggestion must be a concrete instruction the user can send as-is.',
-  '- Use imperative, action-first wording, at most 8 words for "label" (English).',
-  '- "prompt" is the full instruction, at most 200 characters, written in the same language as the user request.',
+  '- Each suggestion is one complete instruction the user can send as-is: what the user reads is exactly what gets sent.',
+  '- Start with a verb, keep it under 160 characters, and write it in the same language as the user request.',
   '- Never repeat the previous request, never restate what was just completed, never add explanations.',
   '- Return 2 or 3 distinct suggestions, ordered by how likely the user wants them next.',
-  '- Reply with JSON only, no markdown fence: {"suggestions":[{"label":"...","prompt":"..."}]}',
+  '- Reply with JSON only, no markdown fence: {"suggestions":[{"prompt":"..."}]}',
 ].join('\n')
 
 export const inject = ['llm', 'sessionProjections']
@@ -325,10 +323,11 @@ function parseSuggestions(raw) {
   for (const candidate of candidates) {
     if (items.length >= MAX_SUGGESTIONS) break
     if (candidate === null || typeof candidate !== 'object') continue
-    const label = typeof candidate.label === 'string' ? candidate.label.trim() : ''
-    const prompt = typeof candidate.prompt === 'string' ? candidate.prompt.trim() : ''
-    if (label === '' || prompt === '') continue
-    const item = { label: clip(label, MAX_LABEL_CHARS), prompt: clip(prompt, MAX_PROMPT_CHARS) }
+    // 建议只保留一段文本：显示的就是发送的，避免卡片文案与实际发送内容不一致。
+    const raw = typeof candidate.prompt === 'string' ? candidate.prompt : candidate.label
+    const prompt = typeof raw === 'string' ? raw.trim() : ''
+    if (prompt === '') continue
+    const item = { prompt: clip(prompt, MAX_PROMPT_CHARS) }
     if (items.some((existing) => existing.prompt === item.prompt)) continue
     items.push(item)
   }

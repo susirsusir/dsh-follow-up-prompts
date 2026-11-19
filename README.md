@@ -5,14 +5,17 @@ A [DeepSeek Harness](https://github.com/deepseek-ai) plugin that suggests what t
 After every completed turn the plugin asks the session's own model for up to three follow-up instructions and shows them as chips above the input box:
 
 ```
-╭───╮ ┌──────────────────────────────────┬───┐ ┌──────────────────────────────┬───┐ ┌────────────┬───┐
-│ › │ │ Summarize the diff and list risks│ ↑ │ │ Run the full test suite      │ ↑ │ │ Stop here  │ ↑ │
-╰───╯ └──────────────────────────────────┴───┘ └──────────────────────────────┴───┘ └────────────┴───┘
+        ┌──────────────────────────────────┬───┐ ┌──────────────────────────────┬───┐ ╭───╮ ╭───╮
+        │ Add unit tests for the parser    │ ↑ │ │ Run the full test suite      │ ↑ │ │ › │ │ × │
+        └──────────────────────────────────┴───┘ └──────────────────────────────┴───┘ ╰───╯ ╰───╯
 ```
 
-- **Click the label** — the instruction is placed into the composer draft; edit it before sending.
+Each suggestion is a single piece of text: what you read on the chip is exactly what gets sent.
+
+- **Click the text** — the instruction is placed into the composer draft; edit it before sending.
 - **Click ↑** — the instruction is sent immediately.
 - **Click › / ‹** — when the chips do not fit, the row scrolls sideways. The right arrow jumps to the last suggestion, the left arrow jumps back to the first. Each arrow only appears when there really is more content in that direction; the scrollbar itself stays hidden.
+- **Hover, then click ×** — hides the row for the current turn. `Esc` does the same.
 
 ## Requirements
 
@@ -41,6 +44,8 @@ Details:
 
 - The model call reuses the session's provider/model and is capped at 600 tokens with a 20 second timeout.
 - At most three suggestions are kept; the row scrolls sideways when they do not fit.
+- Suggestions carry one text field (`prompt`) only, so the chip text and the sent text can never diverge.
+- Hovering the row reveals a close button; `Esc` also collapses it. The row comes back on the next turn.
 - Subagent sessions are skipped.
 - On `turn/start` the previous row is cleared and any in-flight request is aborted, so stale suggestions never flash back.
 - If the model returns something unparsable, the row simply does not appear.

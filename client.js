@@ -15,6 +15,7 @@ window.__ModuleLoader__.load({
       'suggestions.label': 'Next suggestions',
       'suggestion.send': 'Send',
       'suggestion.sendHint': 'Send this instruction',
+      'suggestion.dismiss': 'Hide these suggestions',
       'nav.prev': 'Scroll suggestions left',
       'nav.next': 'Scroll suggestions right',
     }
@@ -24,6 +25,7 @@ window.__ModuleLoader__.load({
       'suggestions.label': 'Next suggestions',
       'suggestion.send': 'Send',
       'suggestion.sendHint': 'Send this instruction',
+      'suggestion.dismiss': 'Hide these suggestions',
       'nav.prev': 'Scroll suggestions left',
       'nav.next': 'Scroll suggestions right',
     }
@@ -31,6 +33,7 @@ window.__ModuleLoader__.load({
       'suggestions.label': '下一步建议',
       'suggestion.send': '发送',
       'suggestion.sendHint': '直接发送这条指令',
+      'suggestion.dismiss': '收起这些建议',
       'nav.prev': '向左查看更多建议',
       'nav.next': '向右查看更多建议',
     }
@@ -38,14 +41,15 @@ window.__ModuleLoader__.load({
     const CSS = [
       // 整条与 composer 同宽，靠宿主的 stack gap 与输入框隔开。
       '.nsx-dock{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance,0px) * 2 - var(--dsh-composer-dock-inset,0px) * 4);margin:0 auto;}',
-      '.nsx-row{position:relative;max-width:calc(var(--dsh-composer-card-max-width,100%) - var(--dsh-composer-dock-inset,0px) * 4);margin:0 auto;}',
+      '.nsx-bar{display:flex;align-items:center;max-width:calc(var(--dsh-composer-card-max-width,100%) - var(--dsh-composer-dock-inset,0px) * 4);margin:0 auto;}',
+      '.nsx-row{position:relative;flex:1 1 auto;min-width:0;}',
       // 建议横向排列；放不下时在这里横向滚动，滚动条隐藏，靠两端箭头提示还有内容。
       '.nsx-viewport{display:flex;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;}',
       '.nsx-viewport::-webkit-scrollbar{display:none;}',
       '.nsx-card{display:flex;flex:1 1 0;min-width:200px;align-items:center;height:32px;box-sizing:border-box;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-specific-menu);}',
       '.nsx-label{flex:1 1 auto;min-width:0;height:100%;padding:0 12px;border:0;background:transparent;color:var(--dsw-alias-label-primary-dimmed);font:inherit;font-size:13px;line-height:20px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
       '.nsx-label:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
-      '.nsx-label:focus-visible,.nsx-send:focus-visible,.nsx-nav:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-label-primary));outline-offset:-2px;}',
+      '.nsx-label:focus-visible,.nsx-send:focus-visible,.nsx-nav:focus-visible,.nsx-dismiss:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-label-primary));outline-offset:-2px;}',
       '.nsx-divider{flex:0 0 auto;align-self:stretch;width:1px;background:var(--dsw-alias-border-l2);}',
       '.nsx-send{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:26px;height:100%;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
       '.nsx-send:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
@@ -54,6 +58,10 @@ window.__ModuleLoader__.load({
       '.nsx-nav:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       '.nsx-nav-prev{left:-30px;}',
       '.nsx-nav-next{right:-30px;}',
+      // 收起按钮始终占位，只在悬停或键盘聚焦时显形，避免出现与消失时整条跳动。
+      '.nsx-dismiss{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin-left:6px;padding:0;border:0;border-radius:999px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0;pointer-events:none;transition:opacity 120ms ease,background-color 120ms ease,color 120ms ease;}',
+      '.nsx-bar:hover .nsx-dismiss,.nsx-dismiss:focus-visible{opacity:1;pointer-events:auto;}',
+      '.nsx-dismiss:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       '@media (prefers-reduced-motion:no-preference){.nsx-card{animation:nsx-in 140ms ease-out;}@keyframes nsx-in{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}}',
       // 窄屏没有外侧空间：箭头压在滚动区域两端，用 padding 让内容不被盖住。
       '@media (max-width:600px){.nsx-nav-prev{left:0;}.nsx-nav-next{right:0;}.nsx-viewport{padding:0 28px;}}',
@@ -104,6 +112,20 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** 收起用的叉号。 */
+    function CloseIcon() {
+      return h(
+        'svg',
+        { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true, focusable: false },
+        h('path', {
+          d: 'M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8',
+          stroke: 'currentColor',
+          strokeWidth: 1.6,
+          strokeLinecap: 'round',
+        }),
+      )
+    }
+
     /** 输入框上方的建议条。 */
     function NextSuggestionsDock(props) {
       const { useProjection, useInput, useSession, inputActions, sessionId, t } = props
@@ -115,14 +137,18 @@ window.__ModuleLoader__.load({
       const running = typeof useSession === 'function' ? useSession((snapshot) => Boolean(snapshot && snapshot.running)) : false
 
       const items = projection && Array.isArray(projection.items) ? projection.items : []
-      const evidence = projection && typeof projection.turn === 'number' ? projection.turn : 0
+      const turn = projection && typeof projection.turn === 'number' ? projection.turn : 0
 
+      /** 用户主动收起的轮次：`{ sessionId, turn }`。 */
+      const [dismissed, setDismissed] = useState(null)
       /** 等待输入框同步后直接发送的请求：`{ prompt, baseline }`。 */
       const [pendingSend, setPendingSend] = useState(null)
       /** 左右两端是否还能滚动；只在状态真的变化时更新，避免多余渲染。 */
       const [edges, setEdges] = useState({ left: false, right: false })
       /** 横向滚动容器。 */
       const viewportRef = useRef(null)
+
+      const hidden = dismissed !== null && dismissed.sessionId === sessionId && dismissed.turn === turn
 
       const translate = useCallback(
         (key) => {
@@ -137,6 +163,23 @@ window.__ModuleLoader__.load({
         },
         [t],
       )
+
+      const dismiss = useCallback(() => {
+        setDismissed({ sessionId, turn })
+      }, [sessionId, turn])
+
+      // Esc 收起本轮建议；用户正在输入框里按 Esc 时也生效，因为建议条只是辅助信息。
+      useEffect(() => {
+        if (hidden) return undefined
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape' || event.defaultPrevented) return
+          dismiss()
+        }
+        document.addEventListener('keydown', onKeyDown)
+        return () => {
+          document.removeEventListener('keydown', onKeyDown)
+        }
+      }, [hidden, dismiss])
 
       /** 重新测量两端是否还有未展示的建议。 */
       const measure = useCallback(() => {
@@ -166,7 +209,7 @@ window.__ModuleLoader__.load({
           node.removeEventListener('scroll', measure)
           if (observer !== undefined) observer.disconnect()
         }
-      }, [measure, evidence, items.length])
+      }, [measure, turn, items.length])
 
       /** 滚到某一端：点箭头一次就滑到最左或最右。 */
       const scrollToEdge = useCallback((edge) => {
@@ -217,27 +260,29 @@ window.__ModuleLoader__.load({
 
       if (items.length === 0) return null
       if (running) return null
+      if (hidden) return null
 
       const cards = []
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index]
         if (item === null || typeof item !== 'object') continue
-        const label = typeof item.label === 'string' ? item.label : ''
-        const prompt = typeof item.prompt === 'string' ? item.prompt : ''
-        if (label === '' || prompt === '') continue
+        // 显示的就是发送的：统一取 prompt，兼容早期只写了 label 的历史数据。
+        const raw = typeof item.prompt === 'string' ? item.prompt : item.label
+        const text = typeof raw === 'string' ? raw.trim() : ''
+        if (text === '') continue
         cards.push(
           h(
             'div',
-            { key: `${evidence}-${index}`, className: 'nsx-card' },
+            { key: `${turn}-${index}`, className: 'nsx-card' },
             h(
               'button',
               {
                 type: 'button',
                 className: 'nsx-label',
-                title: prompt,
-                onClick: () => fill(prompt),
+                title: text,
+                onClick: () => fill(text),
               },
-              label,
+              text,
             ),
             h('span', { className: 'nsx-divider', 'aria-hidden': true }),
             h(
@@ -247,7 +292,7 @@ window.__ModuleLoader__.load({
                 className: 'nsx-send',
                 title: translate('suggestion.send'),
                 'aria-label': translate('suggestion.sendHint'),
-                onClick: () => sendNow(prompt),
+                onClick: () => sendNow(text),
               },
               h(ArrowUpIcon),
             ),
@@ -262,34 +307,49 @@ window.__ModuleLoader__.load({
         h('style', { key: 'nsx-style' }, CSS),
         h(
           'div',
-          { className: 'nsx-row', role: 'group', 'aria-label': translate('suggestions.label') },
-          edges.left
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'nsx-nav nsx-nav-prev',
-                  title: translate('nav.prev'),
-                  'aria-label': translate('nav.prev'),
-                  onClick: () => scrollToEdge('start'),
-                },
-                h(ChevronLeftIcon),
-              )
-            : null,
-          h('div', { className: 'nsx-viewport', ref: viewportRef }, cards),
-          edges.right
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'nsx-nav nsx-nav-next',
-                  title: translate('nav.next'),
-                  'aria-label': translate('nav.next'),
-                  onClick: () => scrollToEdge('end'),
-                },
-                h(ChevronRightIcon),
-              )
-            : null,
+          { className: 'nsx-bar' },
+          h(
+            'div',
+            { className: 'nsx-row', role: 'group', 'aria-label': translate('suggestions.label') },
+            edges.left
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'nsx-nav nsx-nav-prev',
+                    title: translate('nav.prev'),
+                    'aria-label': translate('nav.prev'),
+                    onClick: () => scrollToEdge('start'),
+                  },
+                  h(ChevronLeftIcon),
+                )
+              : null,
+            h('div', { className: 'nsx-viewport', ref: viewportRef }, cards),
+            edges.right
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'nsx-nav nsx-nav-next',
+                    title: translate('nav.next'),
+                    'aria-label': translate('nav.next'),
+                    onClick: () => scrollToEdge('end'),
+                  },
+                  h(ChevronRightIcon),
+                )
+              : null,
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'nsx-dismiss',
+              title: translate('suggestion.dismiss'),
+              'aria-label': translate('suggestion.dismiss'),
+              onClick: dismiss,
+            },
+            h(CloseIcon),
+          ),
         ),
       )
     }
