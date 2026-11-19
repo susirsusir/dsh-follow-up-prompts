@@ -1,4 +1,4 @@
-# Next suggestions
+# Follow-up prompts
 
 在输入框上方增加一条「下一步指令建议」栏。
 
@@ -12,7 +12,7 @@
 
    一条建议只有一段文本：卡片上显示的就是点击 `↑` 发送的内容，不存在「短标题 + 长指令」两套文案。
 
-2. 解析结果（最多三条）写入会话日志的自定义事件 `next-suggestions/ready`，并由同名 projection `nextSuggestions` 折叠成视图。
+2. 解析结果（最多三条）写入会话日志的自定义事件 `follow-up-prompts/ready`，并由同名 projection `followUpPrompts` 折叠成视图。
 3. 输入框上方的插槽 `conversation.input.dock` 渲染这些建议：
    - 点击左侧文案：把这条指令填入输入框，由你自己继续编辑（会替换当前草稿）。
    - 点击 `↑`：直接发送卡片上的这条指令；宿主正忙（审批、提交中）时只填入不发送。
