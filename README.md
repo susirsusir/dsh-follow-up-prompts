@@ -1,5 +1,7 @@
 # dsh-next-suggestions
 
+English | [简体中文](README.zh-CN.md)
+
 A [DeepSeek Harness](https://github.com/deepseek-ai) plugin that suggests what to do next, right above the composer.
 
 After every completed turn the plugin asks the session's own model for up to three follow-up instructions and shows them as chips above the input box:

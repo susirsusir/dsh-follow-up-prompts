@@ -11,6 +11,7 @@
     "./icon": "./icon.svg"
   },
   "files": [
+    "README.zh-CN.md",
     "README.md",
     "index.js",
     "client.js",
