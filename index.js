@@ -4,14 +4,35 @@
  * 由同名 projection 折叠成 Client 可直接读取的视图数据。
  */
 
+import { appendFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+/** 诊断日志路径：宿主日志不可见时用它定位「没有出现建议」的原因。 */
+const DEBUG_FILE = join(tmpdir(), 'dsh-next-suggestions.log')
+
+function debug(stage, detail) {
+  try {
+    const body = detail === undefined ? '' : typeof detail === 'string' ? detail : JSON.stringify(detail)
+    appendFileSync(DEBUG_FILE, `${new Date().toISOString()} [${stage}] ${body}\n`)
+  } catch {
+    // 诊断日志写不进去不影响插件功能。
+  }
+}
+
+function describe(error) {
+  if (error instanceof Error) return `${error.name}: ${error.message}`
+  return String(error)
+}
+
 /** projection key，Client 通过 useProjection('nextSuggestions') 读取。 */
 const PROJECTION_KEY = 'nextSuggestions'
 /** 自定义 durable 事件类型（日志永不丢失，重放后建议仍在）。 */
 const EVENT_TYPE = 'next-suggestions/ready'
 /** 单次模型请求的超时时间。 */
 const REQUEST_TIMEOUT_MS = 20_000
-/** 最多保留两条建议，与设计稿一致。 */
-const MAX_SUGGESTIONS = 2
+/** 最多保留三条建议；超出后由客户端横向滚动展示。 */
+const MAX_SUGGESTIONS = 3
 /** 标题、正文、上下文的长度上限，避免把整轮长文塞进请求。 */
 const MAX_LABEL_CHARS = 60
 const MAX_PROMPT_CHARS = 400
@@ -27,6 +48,7 @@ const SYSTEM_PROMPT = [
   '- Use imperative, action-first wording, at most 8 words for "label" (English).',
   '- "prompt" is the full instruction, at most 200 characters, written in the same language as the user request.',
   '- Never repeat the previous request, never restate what was just completed, never add explanations.',
+  '- Return 2 or 3 distinct suggestions, ordered by how likely the user wants them next.',
   '- Reply with JSON only, no markdown fence: {"suggestions":[{"label":"...","prompt":"..."}]}',
 ].join('\n')
 
@@ -72,7 +94,8 @@ export function apply(ctx) {
           handle = value
           if (disposed) void value.dispose()
         },
-        () => {
+        (error) => {
+          debug('projection/failed', describe(error))
           // key 冲突等注册失败只影响本插件，不打断会话。
         },
       )
@@ -147,9 +170,18 @@ export function apply(ctx) {
       assistant: state.assistant,
     }
     // 只有正常完成且确实有助手输出才给建议。
-    if (reason !== 'completed') return
-    if (snapshot.assistant.trim() === '') return
-    if (session.header?.origin === 'subagent') return
+    if (reason !== 'completed') {
+      debug('skip/reason', { turn: snapshot.turn, reason })
+      return
+    }
+    if (snapshot.assistant.trim() === '') {
+      debug('skip/empty-assistant', { turn: snapshot.turn })
+      return
+    }
+    if (session.header?.origin === 'subagent') {
+      debug('skip/subagent', { turn: snapshot.turn })
+      return
+    }
     // append 在发布边界内会被拒绝，所以先让出一拍再做外部调用。
     setTimeout(() => {
       void suggest(session, snapshot)
@@ -161,7 +193,16 @@ export function apply(ctx) {
     if (state.busy) return
     // 请求头事件只在配置变化时写入，长时间未变更时会缺省，因此优先读会话缓存的 header。
     const route = readRoute(session) ?? state.route
-    if (route === undefined) return
+    if (route === undefined) {
+      debug('skip/no-route', { turn: snapshot.turn })
+      return
+    }
+    debug('suggest/start', {
+      turn: snapshot.turn,
+      route,
+      userChars: snapshot.user.length,
+      assistantChars: snapshot.assistant.length,
+    })
 
     state.busy = true
     const controller = new AbortController()
@@ -180,13 +221,13 @@ export function apply(ctx) {
         maxTokens: 600,
         temperature: 0.5,
         sessionId: session.id,
-        purpose: 'next-suggestions',
         signal: controller.signal,
       })
       for await (const chunk of stream) {
         if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
       }
-    } catch {
+    } catch (error) {
+      debug('suggest/failed', { turn: snapshot.turn, error: describe(error) })
       return
     } finally {
       clearTimeout(timer)
@@ -195,11 +236,14 @@ export function apply(ctx) {
     }
 
     const items = parseSuggestions(text)
+    debug('suggest/parsed', { turn: snapshot.turn, chars: text.length, items: items.length })
     if (items.length === 0) return
     try {
       session.append(EVENT_TYPE, { turn: snapshot.turn, items, createdAt: Date.now() })
       state.hasItems = true
-    } catch {
+      debug('suggest/appended', { turn: snapshot.turn, items: items.length })
+    } catch (error) {
+      debug('suggest/append-failed', { turn: snapshot.turn, error: describe(error) })
       // 会话已销毁或数据不可序列化时静默放弃。
     }
   }

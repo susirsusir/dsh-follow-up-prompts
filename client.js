@@ -3,7 +3,7 @@ window.__ModuleLoader__.load({
   factory(require) {
     const React = require('react')
     const h = React.createElement
-    const { useCallback, useEffect, useState } = React
+    const { useCallback, useEffect, useRef, useState } = React
 
     /** 本插件在 locale 服务里的命名空间。 */
     const NS = 'next-suggestions'
@@ -15,7 +15,8 @@ window.__ModuleLoader__.load({
       'suggestions.label': 'Next suggestions',
       'suggestion.send': 'Send',
       'suggestion.sendHint': 'Send this instruction',
-      'suggestion.dismiss': 'Hide suggestions',
+      'nav.prev': 'Scroll suggestions left',
+      'nav.next': 'Scroll suggestions right',
     }
 
     /** 两类词典；扁平点分 key，与 locale 服务约定一致。 */
@@ -23,31 +24,39 @@ window.__ModuleLoader__.load({
       'suggestions.label': 'Next suggestions',
       'suggestion.send': 'Send',
       'suggestion.sendHint': 'Send this instruction',
-      'suggestion.dismiss': 'Hide suggestions',
+      'nav.prev': 'Scroll suggestions left',
+      'nav.next': 'Scroll suggestions right',
     }
     const zh = {
       'suggestions.label': '下一步建议',
       'suggestion.send': '发送',
       'suggestion.sendHint': '直接发送这条指令',
-      'suggestion.dismiss': '隐藏这些建议',
+      'nav.prev': '向左查看更多建议',
+      'nav.next': '向右查看更多建议',
     }
 
     const CSS = [
       // 整条与 composer 同宽，靠宿主的 stack gap 与输入框隔开。
       '.nsx-dock{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance,0px) * 2 - var(--dsh-composer-dock-inset,0px) * 4);margin:0 auto;}',
-      '.nsx-row{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;max-width:calc(var(--dsh-composer-card-max-width,100%) - var(--dsh-composer-dock-inset,0px) * 4);margin:0 auto;}',
-      '.nsx-card{display:flex;align-items:center;flex:1 1 0;min-width:0;height:32px;box-sizing:border-box;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-specific-menu);}',
+      '.nsx-row{position:relative;max-width:calc(var(--dsh-composer-card-max-width,100%) - var(--dsh-composer-dock-inset,0px) * 4);margin:0 auto;}',
+      // 建议横向排列；放不下时在这里横向滚动，滚动条隐藏，靠两端箭头提示还有内容。
+      '.nsx-viewport{display:flex;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;}',
+      '.nsx-viewport::-webkit-scrollbar{display:none;}',
+      '.nsx-card{display:flex;flex:1 1 0;min-width:200px;align-items:center;height:32px;box-sizing:border-box;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-specific-menu);}',
       '.nsx-label{flex:1 1 auto;min-width:0;height:100%;padding:0 12px;border:0;background:transparent;color:var(--dsw-alias-label-primary-dimmed);font:inherit;font-size:13px;line-height:20px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
       '.nsx-label:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
-      '.nsx-label:focus-visible,.nsx-send:focus-visible,.nsx-dismiss:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-label-primary));outline-offset:-2px;}',
+      '.nsx-label:focus-visible,.nsx-send:focus-visible,.nsx-nav:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-label-primary));outline-offset:-2px;}',
       '.nsx-divider{flex:0 0 auto;align-self:stretch;width:1px;background:var(--dsw-alias-border-l2);}',
       '.nsx-send{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:26px;height:100%;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
       '.nsx-send:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
-      '.nsx-dismiss{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-specific-menu);color:var(--dsw-alias-label-tertiary);cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
-      '.nsx-dismiss:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+      // 两端箭头贴在建议条外侧，不占滚动区域的宽度，避免出现与消失引起抖动。
+      '.nsx-nav{position:absolute;top:50%;z-index:2;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-specific-menu);color:var(--dsw-alias-label-tertiary);cursor:pointer;transform:translateY(-50%);transition:background-color 120ms ease,color 120ms ease;}',
+      '.nsx-nav:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
+      '.nsx-nav-prev{left:-30px;}',
+      '.nsx-nav-next{right:-30px;}',
       '@media (prefers-reduced-motion:no-preference){.nsx-card{animation:nsx-in 140ms ease-out;}@keyframes nsx-in{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}}',
-      // 窄屏只保留第一条，避免两面都只剩省略号。
-      '@media (max-width:560px){.nsx-card{flex:1 1 auto;}.nsx-card + .nsx-card{display:none;}}',
+      // 窄屏没有外侧空间：箭头压在滚动区域两端，用 padding 让内容不被盖住。
+      '@media (max-width:600px){.nsx-nav-prev{left:0;}.nsx-nav-next{right:0;}.nsx-viewport{padding:0 28px;}}',
     ].join('')
 
     /** 向上箭头。 */
@@ -57,6 +66,21 @@ window.__ModuleLoader__.load({
         { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true, focusable: false },
         h('path', {
           d: 'M8 12.6V3.6M4.3 7.3 8 3.6l3.7 3.7',
+          stroke: 'currentColor',
+          strokeWidth: 1.6,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+        }),
+      )
+    }
+
+    /** 左向尖角。 */
+    function ChevronLeftIcon() {
+      return h(
+        'svg',
+        { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true, focusable: false },
+        h('path', {
+          d: 'M9.8 3.4 5.2 8l4.6 4.6',
           stroke: 'currentColor',
           strokeWidth: 1.6,
           strokeLinecap: 'round',
@@ -90,10 +114,15 @@ window.__ModuleLoader__.load({
       const phase = typeof useInput === 'function' ? useInput((state) => state.phase) : undefined
       const running = typeof useSession === 'function' ? useSession((snapshot) => Boolean(snapshot && snapshot.running)) : false
 
-      /** 用户主动隐藏的轮次：`{ sessionId, turn }`。 */
-      const [dismissed, setDismissed] = useState(null)
+      const items = projection && Array.isArray(projection.items) ? projection.items : []
+      const evidence = projection && typeof projection.turn === 'number' ? projection.turn : 0
+
       /** 等待输入框同步后直接发送的请求：`{ prompt, baseline }`。 */
       const [pendingSend, setPendingSend] = useState(null)
+      /** 左右两端是否还能滚动；只在状态真的变化时更新，避免多余渲染。 */
+      const [edges, setEdges] = useState({ left: false, right: false })
+      /** 横向滚动容器。 */
+      const viewportRef = useRef(null)
 
       const translate = useCallback(
         (key) => {
@@ -109,10 +138,43 @@ window.__ModuleLoader__.load({
         [t],
       )
 
-      const dismiss = useCallback(() => {
-        const turn = projection && typeof projection.turn === 'number' ? projection.turn : 0
-        setDismissed({ sessionId, turn })
-      }, [projection, sessionId])
+      /** 重新测量两端是否还有未展示的建议。 */
+      const measure = useCallback(() => {
+        const node = viewportRef.current
+        if (node === undefined || node === null) {
+          setEdges((prev) => (prev.left || prev.right ? { left: false, right: false } : prev))
+          return
+        }
+        const max = node.scrollWidth - node.clientWidth
+        const left = node.scrollLeft > 1
+        const right = max > 1 && node.scrollLeft < max - 1
+        setEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }))
+      }, [])
+
+      // 建议变化或容器尺寸变化时重新测量；滚动过程中同步更新，让两端箭头跟着出现和消失。
+      useEffect(() => {
+        const node = viewportRef.current
+        if (node === undefined || node === null) return undefined
+        measure()
+        node.addEventListener('scroll', measure, { passive: true })
+        let observer
+        if (typeof ResizeObserver === 'function') {
+          observer = new ResizeObserver(measure)
+          observer.observe(node)
+        }
+        return () => {
+          node.removeEventListener('scroll', measure)
+          if (observer !== undefined) observer.disconnect()
+        }
+      }, [measure, evidence, items.length])
+
+      /** 滚到某一端：点箭头一次就滑到最左或最右。 */
+      const scrollToEdge = useCallback((edge) => {
+        const node = viewportRef.current
+        if (node === undefined || node === null) return
+        const max = node.scrollWidth - node.clientWidth
+        node.scrollTo({ left: edge === 'start' ? 0 : max, behavior: 'smooth' })
+      }, [])
 
       // setDraft 通过编辑器异步投影回 InputState，等草稿真的变了再提交；
       // 文本未变化（或宿主处于审批态）时只把内容留在输入框，让用户自己按回车。
@@ -140,25 +202,21 @@ window.__ModuleLoader__.load({
 
       const fill = useCallback(
         (prompt) => {
-          dismiss()
           inputActions.setDraft(prompt)
         },
-        [dismiss, inputActions],
+        [inputActions],
       )
 
       const sendNow = useCallback(
         (prompt) => {
-          dismiss()
           setPendingSend({ prompt, baseline: typeof draft === 'string' ? draft : '' })
           inputActions.setDraft(prompt)
         },
-        [dismiss, draft, inputActions],
+        [draft, inputActions],
       )
 
-      const items = projection && Array.isArray(projection.items) ? projection.items : []
       if (items.length === 0) return null
       if (running) return null
-      if (dismissed !== null && dismissed.sessionId === sessionId && dismissed.turn === projection.turn) return null
 
       const cards = []
       for (let index = 0; index < items.length; index += 1) {
@@ -170,7 +228,7 @@ window.__ModuleLoader__.load({
         cards.push(
           h(
             'div',
-            { key: `${projection.turn}-${index}`, className: 'nsx-card' },
+            { key: `${evidence}-${index}`, className: 'nsx-card' },
             h(
               'button',
               {
@@ -205,18 +263,33 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'nsx-row', role: 'group', 'aria-label': translate('suggestions.label') },
-          cards,
-          h(
-            'button',
-            {
-              type: 'button',
-              className: 'nsx-dismiss',
-              title: translate('suggestion.dismiss'),
-              'aria-label': translate('suggestion.dismiss'),
-              onClick: dismiss,
-            },
-            h(ChevronRightIcon),
-          ),
+          edges.left
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'nsx-nav nsx-nav-prev',
+                  title: translate('nav.prev'),
+                  'aria-label': translate('nav.prev'),
+                  onClick: () => scrollToEdge('start'),
+                },
+                h(ChevronLeftIcon),
+              )
+            : null,
+          h('div', { className: 'nsx-viewport', ref: viewportRef }, cards),
+          edges.right
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'nsx-nav nsx-nav-next',
+                  title: translate('nav.next'),
+                  'aria-label': translate('nav.next'),
+                  onClick: () => scrollToEdge('end'),
+                },
+                h(ChevronRightIcon),
+              )
+            : null,
         ),
       )
     }

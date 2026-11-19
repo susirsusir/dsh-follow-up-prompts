@@ -11,6 +11,7 @@
     "./icon": "./icon.svg"
   },
   "files": [
+    "README.md",
     "index.js",
     "client.js",
     "cordis.patch.yml",

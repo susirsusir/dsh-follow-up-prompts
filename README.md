@@ -2,17 +2,17 @@
 
 A [DeepSeek Harness](https://github.com/deepseek-ai) plugin that suggests what to do next, right above the composer.
 
-After every completed turn the plugin asks the session's own model for up to two follow-up instructions and shows them as chips above the input box:
+After every completed turn the plugin asks the session's own model for up to three follow-up instructions and shows them as chips above the input box:
 
 ```
-┌──────────────────────────────────────────┬───┐ ┌─────────────────────────────┬───┐ ╭───╮
-│ Summarize the diff and list risks        │ ↑ │ │ Run the full test suite     │ ↑ │ │ › │
-└──────────────────────────────────────────┴───┘ └─────────────────────────────┴───┘ ╰───╯
+╭───╮ ┌──────────────────────────────────┬───┐ ┌──────────────────────────────┬───┐ ┌────────────┬───┐
+│ › │ │ Summarize the diff and list risks│ ↑ │ │ Run the full test suite      │ ↑ │ │ Stop here  │ ↑ │
+╰───╯ └──────────────────────────────────┴───┘ └──────────────────────────────┴───┘ └────────────┴───┘
 ```
 
 - **Click the label** — the instruction is placed into the composer draft; edit it before sending.
 - **Click ↑** — the instruction is sent immediately.
-- **Click ›** — hides the row for the current turn.
+- **Click › / ‹** — when the chips do not fit, the row scrolls sideways. The right arrow jumps to the last suggestion, the left arrow jumps back to the first. Each arrow only appears when there really is more content in that direction; the scrollbar itself stays hidden.
 
 ## Requirements
 
@@ -40,6 +40,7 @@ Then restart DeepSeek Harness so the Host and Client halves load.
 Details:
 
 - The model call reuses the session's provider/model and is capped at 600 tokens with a 20 second timeout.
+- At most three suggestions are kept; the row scrolls sideways when they do not fit.
 - Subagent sessions are skipped.
 - On `turn/start` the previous row is cleared and any in-flight request is aborted, so stale suggestions never flash back.
 - If the model returns something unparsable, the row simply does not appear.
