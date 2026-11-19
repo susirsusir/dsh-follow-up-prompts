@@ -12,7 +12,7 @@ After every completed turn the plugin asks the session's own model for up to thr
         └──────────────────────────────────┴───┘ └──────────────────────────────┴───┘ ╰───╯ ╰───╯
 ```
 
-Each suggestion is a single piece of text: what you read on the chip is exactly what gets sent. Prompts stay under 70 characters, so chips show the whole instruction without an ellipsis; a chip grows taller when the text needs another line and the row stays evenly aligned.
+Each suggestion is a single piece of text: what you read on the chip is exactly what gets sent. Prompts stay under 50 characters, so each chip is one fixed-height line showing the whole instruction without an ellipsis. Chip width follows the text, so chips are not equally wide.
 
 - **Click the text** — the instruction is placed into the composer draft; edit it before sending.
 - **Click ↑** — the instruction is sent immediately.

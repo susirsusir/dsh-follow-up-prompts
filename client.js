@@ -46,8 +46,8 @@ window.__ModuleLoader__.load({
       // 建议横向排列；放不下时在这里横向滚动，滚动条隐藏，靠两端箭头提示还有内容。
       '.nsx-viewport{display:flex;align-items:stretch;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;}',
       '.nsx-viewport::-webkit-scrollbar{display:none;}',
-      '.nsx-card{display:flex;flex:1 1 0;min-width:200px;min-height:32px;align-items:stretch;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-specific-menu);}',
-      '.nsx-label{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:6px 12px;border:0;background:transparent;color:var(--dsw-alias-label-primary-dimmed);font:inherit;font-size:13px;line-height:18px;text-align:left;white-space:normal;overflow-wrap:anywhere;cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
+      '.nsx-card{display:flex;flex:0 0 auto;height:32px;align-items:stretch;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-specific-menu);}',
+      '.nsx-label{flex:0 1 auto;min-width:0;display:flex;align-items:center;padding:0 12px;border:0;background:transparent;color:var(--dsw-alias-label-primary-dimmed);font:inherit;font-size:13px;line-height:20px;text-align:left;white-space:nowrap;cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
       '.nsx-label:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       '.nsx-label:focus-visible,.nsx-send:focus-visible,.nsx-nav:focus-visible,.nsx-dismiss:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-label-primary));outline-offset:-2px;}',
       '.nsx-divider{flex:0 0 auto;align-self:stretch;width:1px;background:var(--dsw-alias-border-l2);}',
@@ -279,7 +279,6 @@ window.__ModuleLoader__.load({
               {
                 type: 'button',
                 className: 'nsx-label',
-                title: text,
                 onClick: () => fill(text),
               },
               text,

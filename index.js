@@ -34,7 +34,7 @@ const REQUEST_TIMEOUT_MS = 20_000
 /** 最多保留三条建议；超出后由客户端横向滚动展示。 */
 const MAX_SUGGESTIONS = 3
 /** 单条建议与上下文的长度上限，避免把整轮长文塞进请求。 */
-const MAX_PROMPT_CHARS = 120
+const MAX_PROMPT_CHARS = 80
 const USER_EXCERPT_CHARS = 2_000
 const ASSISTANT_EXCERPT_CHARS = 4_000
 
@@ -44,7 +44,7 @@ const SYSTEM_PROMPT = [
   'Rules:',
   '- Read the user request and the assistant answer below.',
   '- Each suggestion is one complete instruction the user can send as-is: what the user reads is exactly what gets sent.',
-  '- Start with a verb, keep it under 70 characters, and write it in the same language as the user request.',
+  '- Start with a verb, keep it under 50 characters, and write it in the same language as the user request.',
   '- Never repeat the previous request, never restate what was just completed, never add explanations.',
   '- Return 2 or 3 distinct suggestions, ordered by how likely the user wants them next.',
   '- Reply with JSON only, no markdown fence: {"suggestions":[{"prompt":"..."}]}',
