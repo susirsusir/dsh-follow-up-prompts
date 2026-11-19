@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** 诊断日志路径：宿主日志不可见时用它定位「没有出现建议」的原因。 */
-const DEBUG_FILE = join(tmpdir(), 'dsh-next-suggestions.log')
+const DEBUG_FILE = join(tmpdir(), 'dsh-follow-up-prompts.log')
 
 function debug(stage, detail) {
   try {
@@ -25,10 +25,10 @@ function describe(error) {
   return String(error)
 }
 
-/** projection key，Client 通过 useProjection('nextSuggestions') 读取。 */
-const PROJECTION_KEY = 'nextSuggestions'
+/** projection key，Client 通过 useProjection('followUpPrompts') 读取。 */
+const PROJECTION_KEY = 'followUpPrompts'
 /** 自定义 durable 事件类型（日志永不丢失，重放后建议仍在）。 */
-const EVENT_TYPE = 'next-suggestions/ready'
+const EVENT_TYPE = 'follow-up-prompts/ready'
 /** 单次模型请求的超时时间。 */
 const REQUEST_TIMEOUT_MS = 20_000
 /** 最多保留三条建议；超出后由客户端横向滚动展示。 */
@@ -101,7 +101,7 @@ export function apply(ctx) {
       disposed = true
       void handle?.dispose()
     }
-  }, 'next-suggestions: projection')
+  }, 'follow-up-prompts: projection')
 
   const onEvent = (session, event) => {
     if (event === null || typeof event !== 'object') return

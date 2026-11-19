@@ -1,18 +1,18 @@
 window.__ModuleLoader__.load({
-  id: '@local/dsh-next-suggestions',
+  id: '@local/dsh-follow-up-prompts',
   factory(require) {
     const React = require('react')
     const h = React.createElement
     const { useCallback, useEffect, useRef, useState } = React
 
     /** 本插件在 locale 服务里的命名空间。 */
-    const NS = 'next-suggestions'
+    const NS = 'follow-up-prompts'
     /** 与 Host 半保持一致：读取建议的 projection key。 */
-    const PROJECTION_KEY = 'nextSuggestions'
+    const PROJECTION_KEY = 'followUpPrompts'
 
     /** 组件内文案兜底（locale 未注册时也能显示英文）。 */
     const FALLBACK = {
-      'suggestions.label': 'Next suggestions',
+      'suggestions.label': 'Follow-up prompts',
       'suggestion.send': 'Send',
       'suggestion.sendHint': 'Send this instruction',
       'suggestion.dismiss': 'Hide these suggestions',
@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
 
     /** 两类词典；扁平点分 key，与 locale 服务约定一致。 */
     const en = {
-      'suggestions.label': 'Next suggestions',
+      'suggestions.label': 'Follow-up prompts',
       'suggestion.send': 'Send',
       'suggestion.sendHint': 'Send this instruction',
       'suggestion.dismiss': 'Hide these suggestions',
@@ -30,7 +30,7 @@ window.__ModuleLoader__.load({
       'nav.next': 'Scroll suggestions right',
     }
     const zh = {
-      'suggestions.label': '下一步建议',
+      'suggestions.label': '后续指令建议',
       'suggestion.send': '发送',
       'suggestion.sendHint': '直接发送这条指令',
       'suggestion.dismiss': '收起这些建议',
@@ -127,7 +127,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 输入框上方的建议条。 */
-    function NextSuggestionsDock(props) {
+    function FollowUpPromptsDock(props) {
       const { useProjection, useInput, useSession, inputActions, sessionId, t } = props
 
       // 三个 hook 座位由 slot 保证存在；仍做函数存在性判断，避免宿主变体下崩溃。
@@ -357,16 +357,16 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
-        ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'next-suggestions: dictionaries')
+        ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'follow-up-prompts: dictionaries')
         ctx.slots.inject('conversation.input.dock', () =>
           ctx.slots.register(
             {
               name: 'conversation.input.dock',
-              id: 'next-suggestions',
+              id: 'follow-up-prompts',
               order: 30,
               locale: NS,
             },
-            NextSuggestionsDock,
+            FollowUpPromptsDock,
           ),
         )
       },
