@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Next suggestions",
+    "description": "Suggests follow-up instructions above the composer after each completed turn.",
+    "detail": "docs/DETAIL.md"
+  }
+}

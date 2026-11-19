@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "下一步建议",
+    "description": "每轮对话结束后，在输入框上方给出接下来可以发送的指令建议。",
+    "detail": "docs/DETAIL.md"
+  }
+}
