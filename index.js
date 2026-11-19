@@ -34,7 +34,7 @@ const REQUEST_TIMEOUT_MS = 20_000
 /** 最多保留三条建议；超出后由客户端横向滚动展示。 */
 const MAX_SUGGESTIONS = 3
 /** 单条建议与上下文的长度上限，避免把整轮长文塞进请求。 */
-const MAX_PROMPT_CHARS = 400
+const MAX_PROMPT_CHARS = 120
 const USER_EXCERPT_CHARS = 2_000
 const ASSISTANT_EXCERPT_CHARS = 4_000
 
@@ -44,7 +44,7 @@ const SYSTEM_PROMPT = [
   'Rules:',
   '- Read the user request and the assistant answer below.',
   '- Each suggestion is one complete instruction the user can send as-is: what the user reads is exactly what gets sent.',
-  '- Start with a verb, keep it under 160 characters, and write it in the same language as the user request.',
+  '- Start with a verb, keep it under 70 characters, and write it in the same language as the user request.',
   '- Never repeat the previous request, never restate what was just completed, never add explanations.',
   '- Return 2 or 3 distinct suggestions, ordered by how likely the user wants them next.',
   '- Reply with JSON only, no markdown fence: {"suggestions":[{"prompt":"..."}]}',
@@ -334,9 +334,17 @@ function parseSuggestions(raw) {
   return items
 }
 
-/** 按字符数截断，附省略号。 */
+/** 超长时在最近的标点处收短，不添加省略号（界面上要求完整可读）。 */
 function clip(text, limit) {
   const value = typeof text === 'string' ? text.trim() : ''
   if (value.length <= limit) return value
-  return `${value.slice(0, Math.max(0, limit - 1)).trimEnd()}…`
+  const head = value.slice(0, limit)
+  const boundaries = ['\u3002', '\uff1b', '\uff0c', '\u3001', '. ', '; ', ', ', ' ']
+  let cut = -1
+  for (const mark of boundaries) {
+    const index = head.lastIndexOf(mark)
+    if (index > cut) cut = index
+  }
+  const kept = cut > limit * 0.5 ? head.slice(0, cut) : head
+  return kept.trimEnd()
 }

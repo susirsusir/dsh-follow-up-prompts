@@ -44,14 +44,14 @@ window.__ModuleLoader__.load({
       '.nsx-bar{display:flex;align-items:center;max-width:calc(var(--dsh-composer-card-max-width,100%) - var(--dsh-composer-dock-inset,0px) * 4);margin:0 auto;}',
       '.nsx-row{position:relative;flex:1 1 auto;min-width:0;}',
       // 建议横向排列；放不下时在这里横向滚动，滚动条隐藏，靠两端箭头提示还有内容。
-      '.nsx-viewport{display:flex;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;}',
+      '.nsx-viewport{display:flex;align-items:stretch;gap:6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;}',
       '.nsx-viewport::-webkit-scrollbar{display:none;}',
-      '.nsx-card{display:flex;flex:1 1 0;min-width:200px;align-items:center;height:32px;box-sizing:border-box;overflow:hidden;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-specific-menu);}',
-      '.nsx-label{flex:1 1 auto;min-width:0;height:100%;padding:0 12px;border:0;background:transparent;color:var(--dsw-alias-label-primary-dimmed);font:inherit;font-size:13px;line-height:20px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
+      '.nsx-card{display:flex;flex:1 1 0;min-width:200px;min-height:32px;align-items:stretch;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);background:var(--dsw-specific-menu);}',
+      '.nsx-label{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:6px 12px;border:0;background:transparent;color:var(--dsw-alias-label-primary-dimmed);font:inherit;font-size:13px;line-height:18px;text-align:left;white-space:normal;overflow-wrap:anywhere;cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
       '.nsx-label:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       '.nsx-label:focus-visible,.nsx-send:focus-visible,.nsx-nav:focus-visible,.nsx-dismiss:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-label-primary));outline-offset:-2px;}',
       '.nsx-divider{flex:0 0 auto;align-self:stretch;width:1px;background:var(--dsw-alias-border-l2);}',
-      '.nsx-send{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:26px;height:100%;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
+      '.nsx-send{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:26px;align-self:stretch;height:auto;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;transition:background-color 120ms ease,color 120ms ease;}',
       '.nsx-send:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       // 两端箭头贴在建议条外侧，不占滚动区域的宽度，避免出现与消失引起抖动。
       '.nsx-nav{position:absolute;top:50%;z-index:2;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-specific-menu);color:var(--dsw-alias-label-tertiary);cursor:pointer;transform:translateY(-50%);transition:background-color 120ms ease,color 120ms ease;}',
