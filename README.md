@@ -19,7 +19,7 @@ Each suggestion is a single piece of text: what you read on the chip is exactly 
 - **Hover a chip** — after a moment a card appears above it with the full instruction and the rules of use (`Click to add to the input (double-click to send) · ↑ sends now`). The card is as wide as its content up to the composer width and never truncates; it ignores the pointer and disappears when you move away.
 - **Click ↑** — the instruction is sent immediately.
 - **Click › / ‹** — when the chips do not fit, the row scrolls sideways. The right arrow jumps to the last suggestion, the left arrow jumps back to the first. Each arrow only appears when there really is more content in that direction; the scrollbar itself stays hidden.
-- **Hover, then click ×** — hides the row for the current turn. `Esc` does the same.
+- **Hover, then click ×** — hides the row for the current turn. `Esc` does the same. While a right arrow is showing (more chips to the right), the `×` stays out of the way — the two share the same spot — and comes back once the row is scrolled to the end.
 
 ## Requirements
 
@@ -49,7 +49,7 @@ Details:
 - The model call reuses the session's provider/model and is capped at 600 tokens with a 20 second timeout.
 - At most three suggestions are kept; the row scrolls sideways when they do not fit.
 - Suggestions carry one text field (`prompt`) only, so the chip text and the sent text can never diverge.
-- Hovering the row reveals a close button; `Esc` also collapses it. The row comes back on the next turn.
+- Hovering the row reveals a close button; `Esc` also collapses it. The close button waits while the right arrow is showing, then returns at the end of the scroll. The row comes back on the next turn.
 - Subagent sessions are skipped.
 - On `turn/start` the previous row is cleared and any in-flight request is aborted, so stale suggestions never flash back.
 - If the model returns something unparsable, the row simply does not appear.

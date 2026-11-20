@@ -79,7 +79,8 @@ window.__ModuleLoader__.load({
       '.nsx-nav-next{right:-30px;}',
       // 收起按钮始终占位，只在悬停或键盘聚焦时显形，避免出现与消失时整条跳动。
       '.nsx-dismiss{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin-left:6px;padding:0;border:0;border-radius:999px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:0;pointer-events:none;transition:opacity 120ms ease,background-color 120ms ease,color 120ms ease;}',
-      '.nsx-bar:hover .nsx-dismiss,.nsx-dismiss:focus-visible{opacity:1;pointer-events:auto;}',
+      // 右侧还有未展示的建议（出现 › ）时收起按钮不显形：两者在同一个格子里，同时出现会重叠。
+      '.nsx-bar:hover .nsx-dismiss:not([data-held="true"]),.nsx-dismiss:not([data-held="true"]):focus-visible{opacity:1;pointer-events:auto;}',
       '.nsx-dismiss:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       '@media (prefers-reduced-motion:no-preference){.nsx-card{animation:nsx-in 140ms ease-out;}@keyframes nsx-in{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}}',
       // 悬停浮层：完整文案 + 操作规则。挂到 body 上，宽度随内容，最大与对话框同宽，不限行数。
@@ -176,6 +177,8 @@ window.__ModuleLoader__.load({
       const [pendingSend, setPendingSend] = useState(null)
       /** 左右两端是否还能滚动；只在状态真的变化时更新，避免多余渲染。 */
       const [edges, setEdges] = useState({ left: false, right: false })
+      /** 是否已测量过滚动容器：未测量前不显示收起按钮，避免先闪一下再被收起条件藏起来。 */
+      const [measured, setMeasured] = useState(false)
       /** 横向滚动容器。 */
       const viewportRef = useRef(null)
       /** 整条建议条：用来取对话框宽度，作为浮层的最大宽度。 */
@@ -194,6 +197,8 @@ window.__ModuleLoader__.load({
       const clickTimer = useRef(null)
 
       const hidden = dismissed !== null && dismissed.sessionId === sessionId && dismissed.turn === turn
+      /** 右侧还有未展示的建议时，收起按钮与 › 抢同一个格子，先把收起按钮藏起来。 */
+      const holdDismiss = !measured || edges.right
 
       const translate = useCallback(
         (key) => {
@@ -234,8 +239,10 @@ window.__ModuleLoader__.load({
           return
         }
         const max = node.scrollWidth - node.clientWidth
-        const left = node.scrollLeft > 1
-        const right = max > 1 && node.scrollLeft < max - 1
+        // 容差放到 2px：平滑滚动到最右时可能差零点几像素，阈值太紧会让 › 一直不消失。
+        const left = node.scrollLeft > 2
+        const right = max > 2 && node.scrollLeft < max - 2
+        setMeasured((prev) => (prev ? prev : true))
         setEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }))
       }, [])
 
@@ -493,6 +500,9 @@ window.__ModuleLoader__.load({
               className: 'nsx-dismiss',
               title: translate('suggestion.dismiss'),
               'aria-label': translate('suggestion.dismiss'),
+              'aria-hidden': holdDismiss ? 'true' : undefined,
+              'data-held': holdDismiss ? 'true' : undefined,
+              tabIndex: holdDismiss ? -1 : 0,
               onClick: dismiss,
             },
             h(CloseIcon),
