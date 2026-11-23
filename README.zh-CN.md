@@ -21,8 +21,8 @@
 
 ## 环境要求
 
-- 带 `conversation.input.dock` 插槽的 DeepSeek Harness（任意较新的桌面版本）。
-- 无运行时依赖。
+- DeepSeek Harness `>= 0.2.2-rc.5 < 0.3.0`（`engines.dsh`；不满足时 DSH 会拒绝安装或启用，用一个精确到版本的豁免可以强行装上，见 DSH 的插件版本豁免）。
+- 无运行时依赖，也不需要 `npm install`。
 
 ## 安装
 
@@ -51,6 +51,23 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 - `turn/start` 时清空上一轮建议并中止未完成的请求，不会闪回旧内容。
 - 模型输出解析失败时，这一行就不显示。
 
+## 兼容性与自检
+
+写入会话日志依赖 DSH 的两个内部方法（`session.publicationEntry()` 与 `session.commit()`），它们没有对外契约，升级 DSH 时可能变化。插件的应对：
+
+- **写不进去时不再空转**：首次发现写入面缺失就跳过模型请求，并在宿主日志打一条 `[dsh-follow-up-prompts]` 告警，而不是每轮静默没有建议。
+- **不污染日志**：任何写入失败都只记录一条诊断信息，不会写出半截事件；事件本身始终带 `ignorable`，读取端认不出时也只是跳过，不会让会话打不开。
+- **`engines.dsh` 收紧到已实测的大版本**：跨到 `0.3` 时 DSH 会在安装/启用阶段拦下，而不是运行到某一轮才发现建议消失。
+
+升级 DSH 之后在仓库里跑一遍自检，比等某个会话打不开才发现要早（两个脚本只在源码仓库里，不随 npm 包发布）：
+
+```
+npm run canary     # 扫描会话日志：事件是否仍带 ignorable、是否混入会让读取端拒绝的旧类型
+npm run selftest   # 用假宿主验证写入面可用/缺失/抛错三条路径
+```
+
+`canary` 只读，退出码非 0 表示确实存在会让会话打不开的事件；它默认只看最近 14 天写过的会话，`--days N` 调窗口，`--all` 全量。
+
 ## 隐私
 
 本轮文本只发给会话本来就在使用的 provider 与路由。除此之外不离开本机，也没有任何埋点。
@@ -64,6 +81,8 @@ cordis.patch.yml    Bundle 补丁
 locale/en.json      展示元数据（英文）
 locale/zh.json      展示元数据（中文）
 docs/DETAIL.md      插件列表里的详情页
+scripts/canary.mjs  升级后自检（只读扫描会话日志）
+scripts/selftest.mjs 写入面三条路径的自检
 icon.svg            插件图标
 ```
 

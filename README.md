@@ -23,8 +23,8 @@ Each suggestion is a single piece of text: what you read on the chip is exactly 
 
 ## Requirements
 
-- DeepSeek Harness with the `conversation.input.dock` slot (any recent desktop build).
-- No runtime dependencies.
+- DeepSeek Harness `>= 0.2.2-rc.5 < 0.3.0` (`engines.dsh`) with the `conversation.input.dock` slot. DSH refuses to install or enable a plugin outside that range unless a version exemption is granted for the exact pair.
+- No runtime dependencies, no `npm install`.
 
 ## Install
 
@@ -53,6 +53,23 @@ Details:
 - Subagent sessions are skipped.
 - On `turn/start` the previous row is cleared and any in-flight request is aborted, so stale suggestions never flash back.
 - If the model returns something unparsable, the row simply does not appear.
+
+## Compatibility and self-checks
+
+Writing to the session log relies on two internal DSH methods (`session.publicationEntry()` and `session.commit()`) that have no public contract and may change across releases. The plugin handles that by:
+
+- **Not spinning when writes are unavailable**: once the write surface is missing it skips the model call and logs one `[dsh-follow-up-prompts]` warning to the host log, instead of silently producing no suggestions every turn.
+- **Never leaving a half-written event**: a failed write is only a diagnostic line; events always carry `ignorable`, so a reader that does not recognize the type skips it rather than refusing the whole session log.
+- **Pinning the tested minor line**: `engines.dsh` stops at `0.3`, so an incompatible upgrade is caught at install/enable time.
+
+Run the checks from the source checkout after upgrading DSH (both scripts ship with the repo, not with the npm package):
+
+```
+npm run canary     # read-only scan: are events still ignorable, is any legacy type present
+npm run selftest   # fake host covering write surface present/missing/throwing
+```
+
+`canary` exits non-zero only when it finds events that would make a session unreadable; it scans sessions modified in the last 14 days (`--days N`, `--all` for everything).
 
 ## Privacy
 

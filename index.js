@@ -25,6 +25,24 @@ function describe(error) {
   return String(error)
 }
 
+/**
+ * 同一个原因只报一次：既有宿主日志（`ctx.logger.warn`），也留一条诊断记录。
+ * 升级导致写入面变化时，宿主日志能直接看到，不必去翻临时目录。
+ */
+function createReporter(ctx) {
+  const reported = new Set()
+  return (key, message) => {
+    if (reported.has(key)) return
+    reported.add(key)
+    debug('guard/report', { key, message })
+    try {
+      ctx.logger?.warn?.(`[dsh-follow-up-prompts] ${message}`)
+    } catch {
+      // 宿主没有 logger 时只留诊断日志。
+    }
+  }
+}
+
 /** projection key，Client 通过 useProjection('followUpPrompts') 读取。 */
 const PROJECTION_KEY = 'followUpPrompts'
 /**
@@ -47,14 +65,30 @@ const USER_EXCERPT_CHARS = 2_000
 const ASSISTANT_EXCERPT_CHARS = 4_000
 
 /**
+ * 写入面守卫：`publicationEntry` 与 `commit` 是 DSH 的内部方法，没有对外契约，
+ * 升级时可能被移除或收紧。它们不可用时建议既写不进日志、也折叠不出视图，
+ * 所以必须显式报出来，而不是每轮静默丢弃。
+ */
+const REQUIRED_WRITE_METHODS = ['publicationEntry', 'commit']
+
+/** 返回当前会话缺失的写入面方法名（空数组表示可用）。 */
+function missingWriteMethods(session) {
+  return REQUIRED_WRITE_METHODS.filter((name) => typeof session?.[name] !== 'function')
+}
+
+/**
  * 追加一条建议记录到会话日志。
  *
  * `session.append` 只接受 type/data 与 surface 选项，无法携带 `ignorable`
  * 标记，用它写外部类型会产出「未知且不可忽略」的事件，导致整份会话日志
  * 在校验时被拒绝（历史加载失败）。这里改为自行构造完整信封，再交给
  * `session.commit`：它负责顺序校验、写盘与观察者通知。
+ *
+ * 写入面缺失时抛出带固定前缀的错误，调用方据此降级并报一次告警。
  */
 function appendReadyRecord(session, payload) {
+  const missing = missingWriteMethods(session)
+  if (missing.length !== 0) throw new Error(`write surface missing: ${missing.join(', ')}`)
   const entry = session.publicationEntry()
   const event = Object.freeze({
     type: EVENT_TYPE,
@@ -83,6 +117,9 @@ export const inject = ['llm', 'sessionProjections']
 export function apply(ctx) {
   /** 按会话累积本轮的输入、输出与模型路由（WeakMap 不会阻止会话被回收）。 */
   const states = new WeakMap()
+  const report = createReporter(ctx)
+  /** 首次见到会话时检查一次写入面，让「升级后不兼容」在第一条事件上就现形。 */
+  let probed = false
 
   const stateOf = (session) => {
     let state = states.get(session)
@@ -134,6 +171,13 @@ export function apply(ctx) {
 
   const onEvent = (session, event) => {
     if (event === null || typeof event !== 'object') return
+    if (!probed) {
+      probed = true
+      const missing = missingWriteMethods(session)
+      if (missing.length !== 0) {
+        report('write-surface', `当前 DSH 未提供 ${missing.join(' / ')}，建议功能不可用（本轮起不再请求模型）`)
+      }
+    }
     const type = event.type
     const data = event.data
 
@@ -163,8 +207,10 @@ export function apply(ctx) {
         setTimeout(() => {
           try {
             appendReadyRecord(session, { turn, items: [], createdAt: 0 })
-          } catch {
-            // 会话已销毁时忽略。
+          } catch (error) {
+            // 会话已销毁时同样落到这里：只记一条，不打断新一轮。
+            debug('guard/clear-failed', { turn, error: describe(error) })
+            report(`clear:${describe(error)}`, `清空上一轮建议失败：${describe(error)}`)
           }
         }, 0)
       }
@@ -218,6 +264,12 @@ export function apply(ctx) {
   const suggest = async (session, snapshot) => {
     const state = stateOf(session)
     if (state.busy) return
+    // 写入面不可用时建议写不进日志、也折叠不出视图，直接跳过，别白烧一次模型调用。
+    const missing = missingWriteMethods(session)
+    if (missing.length !== 0) {
+      debug('skip/no-write-surface', { turn: snapshot.turn, missing })
+      return
+    }
     // 请求头事件只在配置变化时写入，长时间未变更时会缺省，因此优先读会话缓存的 header。
     const route = readRoute(session) ?? state.route
     if (route === undefined) {
@@ -271,7 +323,8 @@ export function apply(ctx) {
       debug('suggest/appended', { turn: snapshot.turn, items: items.length })
     } catch (error) {
       debug('suggest/append-failed', { turn: snapshot.turn, error: describe(error) })
-      // 会话已销毁或数据不可序列化时静默放弃。
+      // 会话已销毁或数据不可序列化时静默放弃；同样的原因只告警一次。
+      report(`append:${describe(error)}`, `第 ${snapshot.turn} 轮建议写入失败：${describe(error)}`)
     }
   }
 
