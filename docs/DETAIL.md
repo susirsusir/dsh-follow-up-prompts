@@ -10,6 +10,8 @@
    { "suggestions": [{ "prompt": "Add unit tests for the parser" }] }
    ```
 
+   这条请求沿用本轮的 provider/model，但**不沿用本轮的推理强度**：生成建议只是照抄三条短指令，推理没有收益，反而会吃光输出预算。插件通过 `ctx.llm.prepareCall` 读取模型声明的推理档，选最省的一档（通常是 `off`，没有 `off` 时取声明的第一档；模型没有推理能力时不传该字段），输出预算固定 1024。`off` 在 DeepSeek 适配器里会真正关闭 thinking。修这个问题的背景：V4-Pro 在 `high` 下会把 600 tokens 全部花在 reasoning 上，可见文本 0 字符，建议条实际上永远不出现。
+
    一条建议只有一段文本：卡片上显示的就是点击 `↑` 发送的内容，不存在「短标题 + 长指令」两套文案。指令控制在 40 字以内；超过 40 字时卡片只显示前 40 个字符加省略号，完整文案在悬停浮层里给出。
 
 2. 解析结果（最多三条）写入会话日志的自定义事件 `plugin:dsh-follow-up-prompts/ready`，并由 projection `followUpPrompts` 折叠成视图。
@@ -47,4 +49,6 @@
 
 ## 配置
 
-当前无用户可配项；请求使用本轮实际使用的 provider/model 与推理强度，20 秒超时，失败时静默跳过，不影响对话。
+当前无用户可配项。请求沿用本轮的 provider/model，但推理强度降到模型允许的最低档（通常是 `off`）、输出预算 1024，20 秒超时，失败时静默跳过，不影响对话。
+
+如果模型仍然把预算花在推理上（例如某些适配器把 `off` 翻译成「省略推理参数」，而 provider 默认仍思考），`finish` 会是 `max-tokens` 且可见文本为空；此时诊断日志会多一条 `suggest/truncated`，带着 `reasoningTokens` 与耗时，可直接定位，而不是只看到建议条没有出现。

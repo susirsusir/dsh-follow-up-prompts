@@ -127,6 +127,13 @@ const EVENT_TYPE = 'plugin:dsh-follow-up-prompts/ready'
 const LEGACY_EVENT_TYPE = 'follow-up-prompts/ready'
 /** 单次模型请求的超时时间。 */
 const REQUEST_TIMEOUT_MS = 20_000
+/**
+ * 建议请求的输出预算。
+ *
+ * 这里只要求三条短指令加一层 JSON 外壳，关掉推理后 1024 足够；留出余量是
+ * 为了模型偶尔不守约（多写几条或加解释）时仍能解析，而不是写满预算。
+ */
+const SUGGESTION_MAX_TOKENS = 1_024
 /** 最多保留三条建议；超出后由客户端横向滚动展示。 */
 const MAX_SUGGESTIONS = 3
 /** 单条建议与上下文的长度上限，避免把整轮长文塞进请求。 */
@@ -404,20 +411,43 @@ export function apply(ctx) {
       controller.abort()
     }, REQUEST_TIMEOUT_MS)
     let text = ''
+    let finish
+    let usage
+    const startedAt = Date.now()
     try {
-      const stream = ctx.llm.stream({
-        provider: route.provider,
-        model: route.model,
-        ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort }),
+      // 先按模型声明的能力挑推理档，再派发：直接在 stream 里沿用本轮强度会
+      // 让推理模型把预算花在思考上（见 cheapestEffort）。prepareCall 解析出的
+      // 配置必须原样回传，否则宿主以 INVALID_PREPARED_CALL 拒绝派发。
+      const prepared = await ctx.llm.prepareCall(
+        {
+          provider: route.provider,
+          model: route.model,
+          temperature: 0.5,
+          maxTokens: SUGGESTION_MAX_TOKENS,
+        },
+        controller.signal,
+        (controls, model) => {
+          const effort = cheapestEffort(model?.reasoning)
+          return effort === undefined ? controls : { ...controls, reasoningEffort: effort }
+        },
+      )
+      const stream = prepared.stream({
+        ...prepared.config,
         messages: [{ role: 'user', content: [{ type: 'text', text: buildPrompt(snapshot) }] }],
         system: SYSTEM_PROMPT,
-        maxTokens: 600,
-        temperature: 0.5,
         sessionId: session.id,
         signal: controller.signal,
       })
+      debug('suggest/controls', {
+        turn: snapshot.turn,
+        routeEffort: route.reasoningEffort ?? null,
+        reasoningEffort: prepared.config.reasoningEffort ?? null,
+        maxTokens: prepared.config.maxTokens ?? null,
+      })
       for await (const chunk of stream) {
         if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
+        else if (chunk?.type === 'finish') finish = chunk.reason?.kind
+        else if (chunk?.type === 'usage') usage = chunk.usage
       }
     } catch (error) {
       debug('suggest/failed', { turn: snapshot.turn, error: describe(error) })
@@ -429,8 +459,30 @@ export function apply(ctx) {
     }
 
     const items = parseSuggestions(text)
-    debug('suggest/parsed', { turn: snapshot.turn, chars: text.length, items: items.length })
-    if (items.length === 0) return
+    const elapsedMs = Date.now() - startedAt
+    debug('suggest/parsed', {
+      turn: snapshot.turn,
+      chars: text.length,
+      items: items.length,
+      finish: finish ?? 'none',
+      reasoningTokens: usage?.reasoningTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+      ms: elapsedMs,
+    })
+    if (items.length === 0) {
+      // 预算被推理吃光时文本为空、finish 为 max-tokens；留一条能直接定位的
+      // 记录，而不是每轮静默不显示建议。
+      if (finish === 'max-tokens') {
+        debug('suggest/truncated', {
+          turn: snapshot.turn,
+          chars: text.length,
+          reasoningTokens: usage?.reasoningTokens ?? 0,
+          outputTokens: usage?.outputTokens ?? 0,
+          ms: elapsedMs,
+        })
+      }
+      return
+    }
     try {
       appendReadyRecord(session, { turn: snapshot.turn, items, createdAt: Date.now() })
       state.hasItems = true
@@ -473,6 +525,24 @@ function textOf(content) {
     }
   }
   return parts.join('\n\n').trim()
+}
+
+/**
+ * 从模型声明的推理档里挑最省的一档。
+ *
+ * 生成建议只是照抄三条短指令，推理没有收益，反而会吃掉输出预算：V4-Pro 在
+ * high 档会把整个预算花在 reasoning 上，可见文本为 0，建议条就再也不出现。
+ * 各 adapter 都按「由弱到强」声明档位，因此优先取 off；没有 off 时取第一档。
+ * 模型没有推理能力（`reasoning` 缺省）时返回 undefined，表示不要传推理档，
+ * 否则宿主会以 UNSUPPORTED_REASONING_EFFORT 拒绝整个请求。
+ */
+function cheapestEffort(reasoning) {
+  if (reasoning === null || typeof reasoning !== 'object' || !Array.isArray(reasoning.efforts)) return undefined
+  for (const effort of reasoning.efforts) {
+    if (effort?.id === 'off') return 'off'
+  }
+  const first = reasoning.efforts[0]?.id
+  return typeof first === 'string' ? first : undefined
 }
 
 /** 构造给模型的提示词：用户请求 + 助手回答摘要。 */
