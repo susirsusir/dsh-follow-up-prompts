@@ -25,7 +25,9 @@
     "cordis.patch.yml",
     "locale/*.json",
     "docs",
-    "icon.svg"
+    "icon.svg",
+    "assets",
+    "screenshots.json"
   ],
   "dsh": {
     "bundle": {
