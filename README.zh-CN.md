@@ -38,7 +38,7 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 | 半边 | 文件 | 职责 |
 | --- | --- | --- |
-| Host | `index.js` | 按会话保留本轮的用户请求与助手回答，在 `turn/end`（`reason.kind === "completed"`）后调用一次模型，把 `follow-up-prompts/ready` 写入会话日志。 |
+| Host | `index.js` | 按会话保留本轮的用户请求与助手回答，在 `turn/end`（`reason.kind === "completed"`）后调用一次模型，把 `plugin:dsh-follow-up-prompts/ready`（带 `ignorable` 标记）写入会话日志。 |
 | Host | `index.js` | 把该事件折叠成 `followUpPrompts` projection，客户端读的就是它。 |
 | Client | `client.js` | 在 `conversation.input.dock`（order 30）渲染卡片，只用主题 token 上色。 |
 

@@ -40,7 +40,7 @@ Then restart DeepSeek Harness so the Host and Client halves load.
 
 | Half | File | Responsibility |
 | --- | --- | --- |
-| Host | `index.js` | Keeps the completed turn's user/assistant text per session, calls the model once after `turn/end` (`reason.kind === "completed"`), appends `follow-up-prompts/ready` to the session log. |
+| Host | `index.js` | Keeps the completed turn's user/assistant text per session, calls the model once after `turn/end` (`reason.kind === "completed"`), appends `plugin:dsh-follow-up-prompts/ready` (marked `ignorable`) to the session log. |
 | Host | `index.js` | Folds that event into the `followUpPrompts` projection, which is what the client reads. |
 | Client | `client.js` | Renders the chips in `conversation.input.dock` (order 30), using theme tokens only. |
 

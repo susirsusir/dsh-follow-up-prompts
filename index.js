@@ -27,8 +27,16 @@ function describe(error) {
 
 /** projection key，Client 通过 useProjection('followUpPrompts') 读取。 */
 const PROJECTION_KEY = 'followUpPrompts'
-/** 自定义 durable 事件类型（日志永不丢失，重放后建议仍在）。 */
-const EVENT_TYPE = 'follow-up-prompts/ready'
+/**
+ * 自定义 durable 事件类型。
+ *
+ * DSH 的持久化层只接受两类事件：核心白名单内的类型，或者带 `ignorable: true`
+ * 标记的外部事件。外部插件必须用 `plugin:` 前缀声明自己的记录，否则读取端会
+ * 拒绝解释整份日志（表现为「历史加载失败」）。
+ */
+const EVENT_TYPE = 'plugin:dsh-follow-up-prompts/ready'
+/** 1.0.0 及更早版本写下的旧类型；读取端继续折叠，历史建议不会丢。 */
+const LEGACY_EVENT_TYPE = 'follow-up-prompts/ready'
 /** 单次模型请求的超时时间。 */
 const REQUEST_TIMEOUT_MS = 20_000
 /** 最多保留三条建议；超出后由客户端横向滚动展示。 */
@@ -37,6 +45,26 @@ const MAX_SUGGESTIONS = 3
 const MAX_PROMPT_CHARS = 80
 const USER_EXCERPT_CHARS = 2_000
 const ASSISTANT_EXCERPT_CHARS = 4_000
+
+/**
+ * 追加一条建议记录到会话日志。
+ *
+ * `session.append` 只接受 type/data 与 surface 选项，无法携带 `ignorable`
+ * 标记，用它写外部类型会产出「未知且不可忽略」的事件，导致整份会话日志
+ * 在校验时被拒绝（历史加载失败）。这里改为自行构造完整信封，再交给
+ * `session.commit`：它负责顺序校验、写盘与观察者通知。
+ */
+function appendReadyRecord(session, payload) {
+  const entry = session.publicationEntry()
+  const event = Object.freeze({
+    type: EVENT_TYPE,
+    seq: session.seq,
+    time: Date.now(),
+    data: payload,
+    ignorable: true,
+  })
+  session.commit(event, entry)
+}
 
 const SYSTEM_PROMPT = [
   'You suggest the next instructions a user may want to send after an assistant turn.',
@@ -76,7 +104,8 @@ export function apply(ctx) {
         stateSchema: { parse: (value) => value },
         init: () => ({ turn: 0, items: [], createdAt: 0 }),
         apply: (state, event) => {
-          if (event.type !== EVENT_TYPE) return state
+          // 新旧两种记录都折叠，保证升级后历史建议仍然可见。
+          if (event.type !== EVENT_TYPE && event.type !== LEGACY_EVENT_TYPE) return state
           const data = event.data
           if (data === null || typeof data !== 'object' || !Array.isArray(data.items)) return state
           return { turn: Number(data.turn) || 0, items: data.items, createdAt: Number(data.createdAt) || 0 }
@@ -133,7 +162,7 @@ export function apply(ctx) {
         const turn = state.turn
         setTimeout(() => {
           try {
-            session.append(EVENT_TYPE, { turn, items: [], createdAt: 0 })
+            appendReadyRecord(session, { turn, items: [], createdAt: 0 })
           } catch {
             // 会话已销毁时忽略。
           }
@@ -237,7 +266,7 @@ export function apply(ctx) {
     debug('suggest/parsed', { turn: snapshot.turn, chars: text.length, items: items.length })
     if (items.length === 0) return
     try {
-      session.append(EVENT_TYPE, { turn: snapshot.turn, items, createdAt: Date.now() })
+      appendReadyRecord(session, { turn: snapshot.turn, items, createdAt: Date.now() })
       state.hasItems = true
       debug('suggest/appended', { turn: snapshot.turn, items: items.length })
     } catch (error) {
