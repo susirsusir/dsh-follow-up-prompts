@@ -4,7 +4,7 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai) 插件：在输入框上方提示「接下来可以让我做什么」。
 
-每轮回复正常结束后，插件用当前会话的模型再问一次，最多得到三条后续指令，以卡片形式显示在输入框上方：
+每轮回复正常结束后，插件用当前会话所在 provider 上的一个模型再问一次，最多得到三条后续指令，以卡片形式显示在输入框上方：
 
 ```
         ┌──────────────────────────────────┬───┐ ┌──────────────────────────────┬───┐ ╭───╮ ╭───╮
@@ -33,6 +33,15 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 ```
 
 然后重启 DeepSeek Harness，让 Host 与 Client 两半都加载。
+
+## 1.1.3 有什么变化
+
+- **建议不再跑在本轮的重模型上。** 建议只是三条短指令，复用刚回答完的重模型既慢又贵；长会话里它还是把请求推过超时线的直接原因。缺省 `auto` 会在同一 provider 内挑一个轻模型；provider 里没有更便宜的就沿用本轮模型，最坏情况退回旧行为，而不是让建议消失。
+- **超时从 20 秒放宽到 30 秒。** 长会话偶发超过 20 秒才回第一个 token，被中止后一条建议都没有。
+- **失败会留下痕迹。** 诊断日志现在能区分「保持本轮模型」（`suggest/model-kept`）、「选中的模型不可用，已退回」（`suggest/model-fallback`）和「撞上超时」（`suggest/timeout`），不再只是一行建议静默消失。排障时可以用 `DSH_FOLLOW_UP_PROMPTS_TIMEOUT_MS` 改超时阈值。
+- **新增 `suggestionModel` 配置**固定选型：`auto`（缺省）、`session`、`provider/model` 或 `model`。
+
+升级只需重启：已有安装保持缺省 `auto`，不需要额外配置。
 
 ## 工作原理
 
@@ -66,7 +75,7 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 ```
 npm run canary     # 扫描会话日志：事件是否仍带 ignorable、是否混入会让读取端拒绝的旧类型
-npm run selftest   # 用假宿主验证写入面可用/缺失/抛错三条路径
+npm run selftest   # 用假宿主验证写入面可用/缺失/抛错、模型选型与超时诊断
 ```
 
 `canary` 只读，退出码非 0 表示确实存在会让会话打不开的事件；它默认只看最近 14 天写过的会话，`--days N` 调窗口，`--all` 全量。
@@ -75,7 +84,7 @@ npm run selftest   # 用假宿主验证写入面可用/缺失/抛错三条路径
 
 ## 隐私
 
-本轮文本只发给会话本来就在使用的 provider 与路由。除此之外不离开本机，也没有任何埋点。
+本轮文本只发给会话本来就在使用的 provider。唯一的例外是你显式把 `suggestionModel` 指到别的 provider 上的模型，此时会发给那个 provider。除此之外不离开本机，也没有任何埋点。
 
 ## 文件
 
@@ -87,7 +96,7 @@ locale/en.json      展示元数据（英文）
 locale/zh.json      展示元数据（中文）
 docs/DETAIL.md      插件列表里的详情页
 scripts/canary.mjs  升级后自检（只读扫描会话日志）
-scripts/selftest.mjs 写入面三条路径的自检
+scripts/selftest.mjs 写入面、模型选型与超时诊断的自检
 icon.svg            插件图标
 ```
 

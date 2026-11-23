@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A [DeepSeek Harness](https://github.com/deepseek-ai) plugin that suggests what to do next, right above the composer.
 
-After every completed turn the plugin asks the session's own model for up to three follow-up instructions and shows them as chips above the input box:
+After every completed turn the plugin asks a model on the session's own provider for up to three follow-up instructions and shows them as chips above the input box:
 
 ```
         ┌──────────────────────────────────┬───┐ ┌──────────────────────────────┬───┐ ╭───╮ ╭───╮
@@ -35,6 +35,15 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 ```
 
 Then restart DeepSeek Harness so the Host and Client halves load.
+
+## What's new in 1.1.3
+
+- **Suggestions no longer run on the turn's model.** A follow-up is three short instructions, and reusing the heavy model that just answered is slow, expensive, and — in long sessions — the thing that pushed the request past its deadline. The default `auto` picks a lightweight model on the same provider; if the provider offers nothing cheaper it keeps the turn's model, so the behaviour degrades to the old one instead of disappearing.
+- **Timeout raised from 20 s to 30 s.** A long turn occasionally took longer than 20 s to produce its first token and was aborted with nothing to show.
+- **Failures leave a trace.** The diagnostic log now distinguishes "kept the session model" (`suggest/model-kept`), "picked model was unusable, fell back" (`suggest/model-fallback`) and "hit the deadline" (`suggest/timeout`), instead of a silently missing row. `DSH_FOLLOW_UP_PROMPTS_TIMEOUT_MS` overrides the deadline for debugging.
+- **New `suggestionModel` setting** to pin the choice: `auto` (default), `session`, `provider/model`, or `model`.
+
+Upgrading is just a restart: existing installs keep the default `auto`, and nothing needs to be configured.
 
 ## How it works
 
@@ -67,7 +76,7 @@ Run the checks from the source checkout after upgrading DSH (both scripts ship w
 
 ```
 npm run canary     # read-only scan: are events still ignorable, is any legacy type present
-npm run selftest   # fake host covering write surface present/missing/throwing
+npm run selftest   # fake host: write surface present/missing/throwing, model selection, timeout
 ```
 
 `canary` exits non-zero only when it finds events that would make a session unreadable; it scans sessions modified in the last 14 days (`--days N`, `--all` for everything).
@@ -76,7 +85,7 @@ To see the notice row in the real UI, launch DeepSeek Harness with `DSH_FOLLOW_U
 
 ## Privacy
 
-The turn text is sent only to the provider and route the session already uses. Nothing else leaves the machine and there is no telemetry.
+The turn text is sent only to the provider the session already uses. The one exception is an explicit `suggestionModel: <other-provider>/<model>`, which sends it to the provider you named. Nothing else leaves the machine and there is no telemetry.
 
 ## Files
 
@@ -87,6 +96,8 @@ cordis.patch.yml    Bundle patch
 locale/en.json      Display metadata (English)
 locale/zh.json      Display metadata (Chinese)
 docs/DETAIL.md      Detail page shown in the plugin list
+scripts/canary.mjs  Post-upgrade check (read-only session-log scan)
+scripts/selftest.mjs  Fake-host check of the write surface, model selection and timeout
 icon.svg            Plugin icon
 ```
 
