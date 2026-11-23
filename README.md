@@ -46,7 +46,8 @@ Then restart DeepSeek Harness so the Host and Client halves load.
 
 Details:
 
-- The model call reuses the session's provider/model but drops the turn's reasoning effort to the cheapest level the model declares (usually `off`, which DeepSeek maps to `thinking: disabled`), and is capped at 1024 tokens with a 20 second timeout. Suggestions are short copies, not reasoning tasks; leaving the turn's `high` effort on made reasoning models spend the whole budget thinking and return empty text.
+- The model call prefers a lightweight model from the session's provider (`auto` by default: ids containing `flash`/`mini`/`lite`/`small`/`instant`/`turbo`/`haiku`/`nano`/`fast` win; the session model is used when none is available), drops the turn's reasoning effort to the cheapest level the model declares (usually `off`, which DeepSeek maps to `thinking: disabled`), and is capped at 1024 tokens with a 30 second timeout. Suggestions are short copies, not reasoning tasks; leaving the turn's `high` effort on made reasoning models spend the whole budget thinking and return empty text.
+- `suggestionModel` in the patch entry's `config` pins the choice: `auto` (default), `session` (keep the turn's model), `provider/model`, or `model`.
 - At most three suggestions are kept; the row scrolls sideways when they do not fit.
 - Suggestions carry one text field (`prompt`) only, so the chip text and the sent text can never diverge.
 - Hovering the row reveals a close button; `Esc` also collapses it. The close button waits while the right arrow is showing, then returns at the end of the scroll. The row comes back on the next turn.

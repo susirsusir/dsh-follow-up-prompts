@@ -125,8 +125,44 @@ const PROJECTION_KEY = 'followUpPrompts'
 const EVENT_TYPE = 'plugin:dsh-follow-up-prompts/ready'
 /** 1.0.0 及更早版本写下的旧类型；读取端继续折叠，历史建议不会丢。 */
 const LEGACY_EVENT_TYPE = 'follow-up-prompts/ready'
-/** 单次模型请求的超时时间。 */
-const REQUEST_TIMEOUT_MS = 20_000
+/**
+ * 单次模型请求的超时时间。
+ *
+ * 20 秒曾经够用，但建议请求与本轮回答并行占上游配额，长会话偶发 20 秒以上
+ * 才回第一个 token（实测 20.0 秒被中止、一条建议都没写）。这里留出余量：
+ * 正常情况下轻模型 3~7 秒就返回，30 秒只是兜住偶发抖动，不会拖慢正常路径。
+ */
+const REQUEST_TIMEOUT_MS = 30_000
+/**
+ * 自检/排障用：把超时阈值临时改小，才能在秒级跑完「超时」用例。
+ * 未设置或非法值时用 `REQUEST_TIMEOUT_MS`，正常运行不受影响。
+ */
+const TIMEOUT_ENV = 'DSH_FOLLOW_UP_PROMPTS_TIMEOUT_MS'
+
+function requestTimeoutMs() {
+  try {
+    const raw = Number(process.env[TIMEOUT_ENV])
+    return Number.isFinite(raw) && raw > 0 ? raw : REQUEST_TIMEOUT_MS
+  } catch {
+    return REQUEST_TIMEOUT_MS
+  }
+}
+/**
+ * 建议模型的选择策略与缓存。
+ *
+ * 建议只需要「快」——三条短指令，不需要推理。但同一 provider 里常常同时挂着
+ * 推理重模型和轻模型，沿用它本轮用的 model 会既慢又贵，还更容易撞超时。
+ * 这里按 provider 缓存可服务模型清单，让 auto 在同一 provider 内挑轻模型；
+ * 清单是宿主内存里的已安装目录（不联网），缓存只为省掉每轮的重复枚举。
+ */
+const MODEL_CACHE_TTL_MS = 10 * 60 * 1_000
+/** 名字里带这些片段的模型视为轻量档，按顺序优先。 */
+const CHEAP_MODEL_HINTS = ['flash', 'mini', 'lite', 'small', 'instant', 'turbo', 'haiku', 'nano', 'fast']
+/** `suggestionModel` 的取值：auto 自动挑、session 沿用本轮、其余按模型 id 固定。 */
+const AUTO_MODEL = 'auto'
+const SESSION_MODEL = 'session'
+/** provider → { at, models }；provider 切换自然各存一份，不必手动清理。 */
+const modelCache = new Map()
 /**
  * 建议请求的输出预算。
  *
@@ -206,7 +242,17 @@ const SYSTEM_PROMPT = [
 
 export const inject = ['llm', 'sessionProjections']
 
-export function apply(ctx) {
+export function apply(ctx, config) {
+  /**
+   * 本插件的配置（来自 cordis patch 条目里的 `config` 字段）。
+   *
+   * 只认一个键：`suggestionModel`——`auto`（缺省，自动挑轻模型）/ `session`
+   * （沿用本轮模型）/ `provider/model` 或 `model`（固定）。写错不影响启动，
+   * 顶多是固定到一个不存在的模型，由 `suggest/model-fallback` 兜底。
+   */
+  const settings = Object.freeze({
+    suggestionModel: typeof config?.suggestionModel === 'string' ? config.suggestionModel.trim() : '',
+  })
   /** 按会话累积本轮的输入、输出与模型路由（WeakMap 不会阻止会话被回收）。 */
   const states = new WeakMap()
   const report = createReporter(ctx)
@@ -397,31 +443,63 @@ export function apply(ctx) {
       debug('skip/no-route', { turn: snapshot.turn })
       return
     }
+    // busy 必须在任何 await 之前置位：否则连发两轮时两个建议请求会同时在路上。
+    state.busy = true
+    // 选型只读宿主内存里的模型目录，不联网；失败会退回本轮模型，不会中断建议。
+    const target = await chooseModel(ctx, route, settings, snapshot.turn).catch(() => ({
+      provider: route.provider,
+      model: route.model,
+      source: 'session',
+    }))
+    // 选型期间可能已经开始下一轮：旧一轮的建议已经过期，别再写回去。
+    if (state.turn !== 0 && state.turn !== snapshot.turn) {
+      state.busy = false
+      debug('skip/stale-turn', { turn: snapshot.turn, current: state.turn })
+      return
+    }
     debug('suggest/start', {
       turn: snapshot.turn,
       route,
+      target,
       userChars: snapshot.user.length,
       assistantChars: snapshot.assistant.length,
     })
 
-    state.busy = true
     const controller = new AbortController()
     state.controller = controller
+    // 区分「定时器超时」与「turn/start 主动取消」：两者的 finish 都是 aborted，
+    // 但前者是上游变慢（值得记一条），后者是正常取消（不该当故障）。
+    let timedOut = false
+    const timeoutMs = requestTimeoutMs()
     const timer = setTimeout(() => {
+      timedOut = true
       controller.abort()
-    }, REQUEST_TIMEOUT_MS)
-    let text = ''
-    let finish
-    let usage
+    }, timeoutMs)
     const startedAt = Date.now()
-    try {
-      // 先按模型声明的能力挑推理档，再派发：直接在 stream 里沿用本轮强度会
-      // 让推理模型把预算花在思考上（见 cheapestEffort）。prepareCall 解析出的
-      // 配置必须原样回传，否则宿主以 INVALID_PREPARED_CALL 拒绝派发。
+    const logTimeout = (phase, used, finish) => {
+      debug('suggest/timeout', {
+        turn: snapshot.turn,
+        ms: Date.now() - startedAt,
+        timeoutMs,
+        phase,
+        source: used.source,
+        provider: used.provider,
+        model: used.model,
+        finish: finish ?? 'none',
+      })
+    }
+
+    /**
+     * 派发一次建议请求并收完整条流。
+     *
+     * prepareCall 解析出的配置必须原样回传，否则宿主以 INVALID_PREPARED_CALL
+     * 拒绝派发；推理档在这里按目标模型自己的能力重挑，不沿用本轮强度。
+     */
+    const requestOnce = async (used) => {
       const prepared = await ctx.llm.prepareCall(
         {
-          provider: route.provider,
-          model: route.model,
+          provider: used.provider,
+          model: used.model,
           temperature: 0.5,
           maxTokens: SUGGESTION_MAX_TOKENS,
         },
@@ -440,44 +518,82 @@ export function apply(ctx) {
       })
       debug('suggest/controls', {
         turn: snapshot.turn,
+        model: used.model,
+        source: used.source,
         routeEffort: route.reasoningEffort ?? null,
         reasoningEffort: prepared.config.reasoningEffort ?? null,
         maxTokens: prepared.config.maxTokens ?? null,
       })
+      let text = ''
+      let finish
+      let usage
       for await (const chunk of stream) {
         if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
         else if (chunk?.type === 'finish') finish = chunk.reason?.kind
         else if (chunk?.type === 'usage') usage = chunk.usage
       }
-    } catch (error) {
-      debug('suggest/failed', { turn: snapshot.turn, error: describe(error) })
-      return
+      return { text, finish, usage }
+    }
+
+    let result
+    let used = target
+    try {
+      try {
+        result = await requestOnce(target)
+      } catch (error) {
+        if (timedOut) logTimeout('request', target)
+        debug('suggest/failed', { turn: snapshot.turn, model: target.model, source: target.source, error: describe(error) })
+        // 本轮模型也会失败：没有更安全的退路，直接放弃这一轮。
+        if (target.source === 'session' || timedOut) return
+        // 选型不能保证模型一定可用（目录已下线该模型、provider 临时拒绝）。
+        // 清掉缓存让下一轮重新探测，这一轮退回本轮模型再试一次。
+        modelCache.delete(target.provider)
+        debug('suggest/model-fallback', {
+          turn: snapshot.turn,
+          source: target.source,
+          provider: target.provider,
+          model: target.model,
+          reason: describe(error),
+        })
+        used = { provider: route.provider, model: route.model, source: 'session' }
+        try {
+          result = await requestOnce(used)
+        } catch (retryError) {
+          if (timedOut) logTimeout('request', used)
+          debug('suggest/failed', { turn: snapshot.turn, model: used.model, source: used.source, retry: true, error: describe(retryError) })
+          return
+        }
+      }
     } finally {
       clearTimeout(timer)
       state.busy = false
       if (state.controller === controller) state.controller = undefined
     }
 
-    const items = parseSuggestions(text)
+    const items = parseSuggestions(result.text)
     const elapsedMs = Date.now() - startedAt
     debug('suggest/parsed', {
       turn: snapshot.turn,
-      chars: text.length,
+      model: used.model,
+      source: used.source,
+      chars: result.text.length,
       items: items.length,
-      finish: finish ?? 'none',
-      reasoningTokens: usage?.reasoningTokens ?? 0,
-      outputTokens: usage?.outputTokens ?? 0,
+      finish: result.finish ?? 'none',
+      reasoningTokens: result.usage?.reasoningTokens ?? 0,
+      outputTokens: result.usage?.outputTokens ?? 0,
       ms: elapsedMs,
     })
+    if (timedOut) logTimeout('stream', used, result.finish)
     if (items.length === 0) {
       // 预算被推理吃光时文本为空、finish 为 max-tokens；留一条能直接定位的
       // 记录，而不是每轮静默不显示建议。
-      if (finish === 'max-tokens') {
+      if (result.finish === 'max-tokens') {
         debug('suggest/truncated', {
           turn: snapshot.turn,
-          chars: text.length,
-          reasoningTokens: usage?.reasoningTokens ?? 0,
-          outputTokens: usage?.outputTokens ?? 0,
+          model: used.model,
+          chars: result.text.length,
+          reasoningTokens: result.usage?.reasoningTokens ?? 0,
+          outputTokens: result.usage?.outputTokens ?? 0,
           ms: elapsedMs,
         })
       }
@@ -486,14 +602,13 @@ export function apply(ctx) {
     try {
       appendReadyRecord(session, { turn: snapshot.turn, items, createdAt: Date.now() })
       state.hasItems = true
-      debug('suggest/appended', { turn: snapshot.turn, items: items.length })
+      debug('suggest/appended', { turn: snapshot.turn, model: used.model, items: items.length })
     } catch (error) {
       debug('suggest/append-failed', { turn: snapshot.turn, error: describe(error) })
       // 会话已销毁或数据不可序列化时静默放弃；同样的原因只告警一次。
       report(session, `append:${describe(error)}`, `第 ${snapshot.turn} 轮建议写入失败：${describe(error)}`)
     }
   }
-
   ctx.on('session/event', onEvent)
   // projection 注册依赖 effect 清理，这里只保证 effect 被引用以免被裁剪。
   void projection
@@ -525,6 +640,99 @@ function textOf(content) {
     }
   }
   return parts.join('\n\n').trim()
+}
+
+/**
+ * 解析 `suggestionModel` 配置。
+ *
+ * - 缺省 / `auto` → 在本轮 provider 内自动挑一个轻模型（默认行为）；
+ * - `session` → 沿用本轮模型，只把推理档压到最低（1.1.2 的行为）；
+ * - `provider/model` → 固定到指定模型，跨 provider 也允许（显式配置优先）；
+ * - `model` → 固定模型，provider 沿用本轮。
+ */
+function parseModelChoice(config) {
+  const raw = typeof config?.suggestionModel === 'string' ? config.suggestionModel.trim() : ''
+  if (raw === '' || raw === AUTO_MODEL) return { mode: 'auto' }
+  if (raw === SESSION_MODEL) return { mode: 'session' }
+  const slash = raw.indexOf('/')
+  if (slash > 0 && slash < raw.length - 1) {
+    return { mode: 'fixed', provider: raw.slice(0, slash), model: raw.slice(slash + 1).trim() }
+  }
+  return { mode: 'fixed', model: raw }
+}
+
+/** 读取某 provider 当前可服务的模型清单，10 分钟内复用缓存。 */
+async function listedModels(ctx, provider) {
+  const cached = modelCache.get(provider)
+  const now = Date.now()
+  if (cached !== undefined && now - cached.at < MODEL_CACHE_TTL_MS) return cached.models
+  // 宿主早期版本没有 listModels；抛出后由 chooseModel 统一降级。
+  if (typeof ctx.llm?.listModels !== 'function') throw new Error('llm.listModels unavailable')
+  const models = await ctx.llm.listModels(provider)
+  if (!Array.isArray(models)) throw new Error('llm.listModels returned non-array')
+  modelCache.set(provider, { at: now, models })
+  return models
+}
+
+/** 轻量档排名：命中前缀越靠前越小；都不命中返回 HINTS.length（表示「不是轻模型」）。 */
+function cheapRank(model) {
+  const id = typeof model?.id === 'string' ? model.id.toLowerCase() : ''
+  if (id === '') return CHEAP_MODEL_HINTS.length + 1
+  const hit = CHEAP_MODEL_HINTS.findIndex((hint) => id.includes(hint))
+  return hit === -1 ? CHEAP_MODEL_HINTS.length : hit
+}
+
+/**
+ * 从模型清单里挑一个适合出建议的轻模型。
+ *
+ * 只接受支持文本输入的模型；只在小模型里选——如果整个目录都没有轻量档，
+ * 换模型没有收益，返回 undefined 让调用方沿用本轮模型（行为可预期）。
+ * 选中项不可能是本轮已经在用的模型。
+ */
+function pickCheapModel(models, currentModel) {
+  const pool = models.filter((model) => {
+    if (typeof model?.id !== 'string' || model.id === '' || model.id === currentModel) return false
+    if (!Array.isArray(model.inputModalities) || model.inputModalities.length === 0) return true
+    return model.inputModalities.includes('text')
+  })
+  const ranked = pool.filter((model) => cheapRank(model) < CHEAP_MODEL_HINTS.length)
+  if (ranked.length === 0) return undefined
+  ranked.sort((a, b) => cheapRank(a) - cheapRank(b) || a.id.length - b.id.length || (a.id < b.id ? -1 : 1))
+  return ranked[0].id
+}
+
+/**
+ * 决定这一轮用哪个模型，永不抛错。
+ *
+ * 任何一步出问题（没有 listModels、目录为空、目录里没有轻模型）都退回本轮
+ * 模型 + 最低推理档，也就是 1.1.2 的行为——最坏情况不劣于今天，不会因为
+ * 换模型把建议功能整个弄没。
+ */
+async function chooseModel(ctx, route, config, turn) {
+  const sessionChoice = { provider: route.provider, model: route.model, source: 'session' }
+  const choice = parseModelChoice(config)
+  if (choice.mode === 'session') return sessionChoice
+  if (choice.mode === 'fixed') {
+    // 显式配置优先：即使跨 provider 也照用，失败由调用方降级回本轮模型。
+    return { provider: choice.provider ?? route.provider, model: choice.model, source: 'config' }
+  }
+  // 本轮已经在用轻模型：换它没有收益，还会平白多一次目录枚举。
+  if (cheapRank({ id: route.model }) < CHEAP_MODEL_HINTS.length) {
+    debug('suggest/model-kept', { turn, provider: route.provider, model: route.model, reason: 'already-cheap' })
+    return sessionChoice
+  }
+  try {
+    const models = await listedModels(ctx, route.provider)
+    const picked = pickCheapModel(models, route.model)
+    if (picked === undefined) {
+      debug('suggest/model-kept', { turn, provider: route.provider, model: route.model, pool: models.length })
+      return sessionChoice
+    }
+    return { provider: route.provider, model: picked, source: 'auto' }
+  } catch (error) {
+    debug('suggest/model-kept', { turn, provider: route.provider, model: route.model, reason: describe(error) })
+    return sessionChoice
+  }
 }
 
 /**

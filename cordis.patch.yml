@@ -1,3 +1,10 @@
 - insert:
     - id: follow-up-prompts
       name: 'dsh-follow-up-prompts'
+      # 建议模型选型（可选，缺省 auto）。取值范围：
+      #   auto                 在本轮 provider 内挑轻模型（缺省）
+      #   session              沿用本轮模型，只把推理档压到最低
+      #   <provider>/<model>   固定到指定模型，允许跨 provider
+      #   <model>              固定模型，provider 沿用本轮
+      # config:
+      #   suggestionModel: auto

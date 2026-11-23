@@ -7,7 +7,10 @@
  * 2. 模型没有推理能力 → 不传推理档，请求照常成功；
  * 3. 模型把预算花在推理上（finish=max-tokens 且文本为空）→ 不写事件，但留下可定位的诊断；
  * 4. 写入面缺失（DSH 升级后方法消失）→ 不抛错、不请求模型，并告警一次；
- * 5. 写入面抛错（DSH 收紧校验）→ 不抛错，记录 append-failed 并告警一次。
+ * 5. 写入面抛错（DSH 收紧校验）→ 不抛错，记录 append-failed 并告警一次；
+ * 6. 模型选型（1.1.3）：目录里有轻模型就换过去；目录里没有轻模型、目录读不到、
+ *    或显式配置指向不存在的模型 → 都退回本轮模型，最坏情况不劣于 1.1.2；
+ * 7. 超时（1.1.3）：上游迟迟不回 → 中止并留下 `suggest/timeout`，而不是无声消失。
  *
  * 诊断日志写在 `os.tmpdir()` 下，所以每个用例都由父进程用独立 TMPDIR 起子进程，
  * 既互不干扰，也避免覆盖真实运行留下的日志。
@@ -23,7 +26,36 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ENTRY = path.join(HERE, '..', 'index.js')
 const EVENT_TYPE = 'plugin:dsh-follow-up-prompts/ready'
-const CASES = ['ok', 'no-reasoning', 'truncated', 'missing', 'throw']
+const CASES = [
+  'ok',
+  'no-reasoning',
+  'truncated',
+  'missing',
+  'throw',
+  'auto-flash',
+  'auto-none',
+  'auto-broken',
+  'fixed-ok',
+  'fixed-missing',
+  'session-pinned',
+  'auto-already-cheap',
+  'timeout',
+]
+/**
+ * 每个用例的模型目录与插件配置。
+ *
+ * 缺省目录只有本轮在用的 `test`：1.1.2 的行为，用来保证老用例的断言不变。
+ */
+const SCENARIOS = {
+  'auto-flash': { models: [{ id: 'test' }, { id: 'test-flash' }] },
+  'auto-none': { models: [{ id: 'test' }, { id: 'pro-max' }] },
+  'auto-broken': { models: 'throw' },
+  'fixed-ok': { models: [{ id: 'test' }, { id: 'test-flash' }], config: { suggestionModel: 'test-flash' } },
+  'fixed-missing': { models: [{ id: 'test' }], rejected: ['ghost'], config: { suggestionModel: 'ghost' } },
+  'session-pinned': { models: [{ id: 'test' }, { id: 'test-flash' }], config: { suggestionModel: 'session' } },
+  'auto-already-cheap': { models: [{ id: 'test' }, { id: 'test-flash' }], sessionModel: 'test-flash' },
+  timeout: { models: [{ id: 'test' }] },
+}
 /** 与 index.js 里的 SUGGESTION_MAX_TOKENS 保持一致。 */
 const SUGGESTION_MAX_TOKENS = 1_024
 /** 假宿主声明的推理档，顺序与真实 adapter 一致：由弱到强。 */
@@ -38,16 +70,25 @@ function makeHarness(mode) {
   const handlers = []
   const warns = []
   const committed = []
-  const calls = { llm: 0 }
+  const calls = { llm: 0, list: 0 }
   const results = { prepared: undefined, options: undefined }
   let projectionSpec
+
+  const scenario = SCENARIOS[mode] ?? {}
+  const models = scenario.models ?? [{ id: 'test' }]
+  const rejected = scenario.rejected ?? []
+  const config = scenario.config
+  const sessionModel = scenario.sessionModel ?? 'test'
 
   /**
    * 模拟 LlmRuntime.prepareCall：用模型元数据跑 configure、校验推理档、
    * 物化默认值，并要求后续 stream 回传完全相同的 call config。
    */
-  const prepareCall = async (config, _signal, configure) => {
+  const prepareCall = async (rawConfig, _signal, configure) => {
     calls.llm += 1
+    // 模拟「配置/缓存里的模型已经不在服务端目录」：宿主以 UNKNOWN_MODEL 拒绝。
+    if (rejected.includes(rawConfig.model)) throw new Error(`UNKNOWN_MODEL ${rawConfig.model}`)
+    const config = rawConfig
     const model = {
       provider: config.provider,
       id: config.model,
@@ -78,6 +119,15 @@ function makeHarness(mode) {
           if (options[key] !== resolved[key]) throw new Error(`INVALID_PREPARED_CALL ${key}`)
         }
         return (async function* stream() {
+          if (mode === 'timeout') {
+            // 上游迟迟不回：一直等到被 abort，再按真实适配器的样子给出 finish=aborted。
+            await new Promise((resolve) => {
+              if (options.signal?.aborted) resolve()
+              else options.signal?.addEventListener('abort', resolve, { once: true })
+            })
+            yield { type: 'finish', reason: { kind: 'aborted' } }
+            return
+          }
           if (mode === 'truncated') {
             // V4-Pro high 的表现：预算全花在 reasoning 上，可见文本为 0。
             yield { type: 'reasoning-delta', text: '先想想用户想要什么……' }
@@ -108,7 +158,15 @@ function makeHarness(mode) {
         return Promise.resolve({ dispose() {} })
       },
     },
-    llm: { prepareCall },
+    llm: {
+      prepareCall,
+      // 与真正的 pi-ai 适配器一致：只读本地目录，不联网，所以可以安全地每轮调用。
+      async listModels() {
+        calls.list += 1
+        if (models === 'throw') throw new Error('model catalog unavailable')
+        return models
+      },
+    },
     logger: { warn(message) { warns.push(String(message)) } },
   }
 
@@ -116,7 +174,7 @@ function makeHarness(mode) {
     id: 'selftest',
     seq: 42,
     header: { id: 'selftest' },
-    requestHeader: () => ({ config: { provider: 'test', model: 'test', reasoningEffort: 'high' } }),
+    requestHeader: () => ({ config: { provider: 'test', model: sessionModel, reasoningEffort: 'high' } }),
   }
   if (mode !== 'missing') {
     session.publicationEntry = () => ({})
@@ -130,12 +188,12 @@ function makeHarness(mode) {
     for (const handler of handlers) handler(session, event)
   }
 
-  return { ctx, fire, warns, committed, calls, results, get projectionSpec() { return projectionSpec } }
+  return { ctx, config, sessionModel, fire, warns, committed, calls, results, get projectionSpec() { return projectionSpec } }
 }
 
-/** 一轮对话需要的最小事件序列。 */
-const TURN = [
-  { type: 'request/header', data: { header: { config: { provider: 'test', model: 'test', reasoningEffort: 'high' } } } },
+/** 一轮对话需要的最小事件序列；模型按用例可换，其余固定。 */
+const TURN = (model = 'test') => [
+  { type: 'request/header', data: { header: { config: { provider: 'test', model, reasoningEffort: 'high' } } } },
   { type: 'turn/start', data: { turn: 1 } },
   { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '加一个单测' }] } },
   { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '好的' }] } } },
@@ -143,12 +201,14 @@ const TURN = [
 ]
 
 async function runCase(name) {
+  // 超时用例要把阈值压到 200ms，否则每个用例都得等 30 秒。
+  if (name === 'timeout') process.env.DSH_FOLLOW_UP_PROMPTS_TIMEOUT_MS = '200'
   const { apply } = await import(pathToFileURL(ENTRY).href)
   const harness = makeHarness(name)
-  apply(harness.ctx)
-  for (const event of TURN) harness.fire(event)
+  apply(harness.ctx, harness.config)
+  for (const event of TURN(harness.sessionModel)) harness.fire(event)
   // turn/end 之后的建议写入让了一拍（setTimeout 0），留足时间再断言。
-  await new Promise((resolve) => setTimeout(resolve, 120))
+  await new Promise((resolve) => setTimeout(resolve, name === 'timeout' ? 900 : 120))
   const logFile = path.join(os.tmpdir(), 'dsh-follow-up-prompts.log')
   const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : ''
 
@@ -220,6 +280,64 @@ async function runCase(name) {
     const spec = harness.projectionSpec
     const view = spec?.wire?.view(spec.init({ id: 'selftest' }))
     check('写入失败后视图提示不可用', view?.unavailable !== null)
+  }
+
+  if (name === 'auto-flash') {
+    check('写入了一条事件', harness.committed.length === 1)
+    check('换到了轻模型', harness.results.prepared?.model === 'test-flash')
+    check('选型来源记为 auto', log.includes('"source":"auto"'))
+    check('没有误判成降级', !log.includes('suggest/model-fallback'))
+    check('列过一次目录', harness.calls.list === 1)
+  }
+
+  if (name === 'auto-none') {
+    check('写入了一条事件', harness.committed.length === 1)
+    check('目录里没有轻模型时沿用本轮模型', harness.results.prepared?.model === 'test')
+    check('记录了「保持原样」的原因', log.includes('suggest/model-kept') && log.includes('"pool":2'))
+    check('没有把它报成降级', !log.includes('suggest/model-fallback'))
+  }
+
+  if (name === 'auto-broken') {
+    check('目录读不到时仍能出建议', harness.committed.length === 1)
+    check('退回本轮模型', harness.results.prepared?.model === 'test')
+    check('记录了探测失败原因', log.includes('suggest/model-kept') && log.includes('model catalog unavailable'))
+  }
+
+  if (name === 'fixed-ok') {
+    check('写入了一条事件', harness.committed.length === 1)
+    check('配置指定的模型生效', harness.results.prepared?.model === 'test-flash')
+    check('选型来源记为 config', log.includes('"source":"config"'))
+    check('固定模型时不必枚举目录', harness.calls.list === 0)
+  }
+
+  if (name === 'fixed-missing') {
+    check('配置的模型不存在时仍能出建议', harness.committed.length === 1)
+    check('退回本轮模型重试', harness.results.prepared?.model === 'test')
+    check('一共请求了两次模型', harness.calls.llm === 2)
+    check('记录了降级与原因', log.includes('suggest/model-fallback') && log.includes('UNKNOWN_MODEL ghost'))
+  }
+
+  if (name === 'session-pinned') {
+    check('写入了一条事件', harness.committed.length === 1)
+    check('session 模式不换模型', harness.results.prepared?.model === 'test')
+    check('session 模式不枚举目录', harness.calls.list === 0)
+    check('没有降级记录', !log.includes('suggest/model-fallback') && !log.includes('suggest/model-kept'))
+  }
+
+  if (name === 'auto-already-cheap') {
+    check('写入了一条事件', harness.committed.length === 1)
+    check('本轮已是轻模型就不换', harness.results.prepared?.model === 'test-flash')
+    check('记录了保持原样的原因', log.includes('suggest/model-kept') && log.includes('already-cheap'))
+    check('已经够便宜时不再枚举目录', harness.calls.list === 0)
+  }
+
+  if (name === 'timeout') {
+    check('超时不写事件', harness.committed.length === 0)
+    check('留下了超时诊断', log.includes('suggest/timeout'))
+    check('诊断带阈值与耗时', log.includes('"timeoutMs":200') && log.includes('"ms":'))
+    check('诊断标出阶段是流式阶段', log.includes('"phase":"stream"'))
+    check('诊断带 finish 原因', log.includes('"finish":"aborted"'))
+    check('没有把它记成成功', !log.includes('suggest/appended'))
   }
 
   const failed = assertions.filter((assertion) => !assertion.ok)

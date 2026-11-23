@@ -44,7 +44,8 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 细节：
 
-- 模型请求复用会话本身的 provider/model，但不沿用本轮推理强度：降到模型声明的最低档（通常是 `off`，DeepSeek 适配器会真正关掉 thinking），最多 1024 tokens，20 秒超时。建议只是短指令，不是推理任务；沿用 `high` 会让推理模型把预算全花在思考上，返回空文本。
+- 模型请求优先在同 provider 内换一个轻模型（缺省 `auto`：id 里带 `flash`/`mini`/`lite`/`small`/`instant`/`turbo`/`haiku`/`nano`/`fast` 的优先；没有可用的就沿用本轮模型），推理强度降到模型声明的最低档（通常是 `off`，DeepSeek 适配器会真正关掉 thinking），最多 1024 tokens，30 秒超时。建议只是短指令，不是推理任务；沿用 `high` 会让推理模型把预算全花在思考上，返回空文本。
+- patch 条目的 `config.suggestionModel` 可以固定选型：`auto`（缺省）、`session`（沿用本轮模型）、`provider/model` 或 `model`。
 - 最多保留三条建议；放不下时整行横向滚动。
 - 建议只有 `prompt` 一个文本字段，因此卡片文案与发送内容不可能不一致。
 - 子会话（subagent）不产生建议。
