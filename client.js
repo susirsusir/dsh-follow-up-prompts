@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: '@local/dsh-follow-up-prompts',
+  id: 'dsh-follow-up-prompts',
   factory(require) {
     const React = require('react')
     const h = React.createElement

@@ -1,9 +1,16 @@
 {
-  "name": "@local/dsh-follow-up-prompts",
+  "name": "dsh-follow-up-prompts",
   "version": "1.0.0",
-  "private": true,
   "type": "module",
   "description": "Suggests follow-up instructions above the composer after each turn.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/susirsusir/dsh-follow-up-prompts.git"
+  },
+  "engines": {
+    "dsh": ">=0.2.0-0"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
