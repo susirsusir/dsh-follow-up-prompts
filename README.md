@@ -98,6 +98,7 @@ cordis.patch.yml    Bundle patch
 locale/en.json      Display metadata (English)
 locale/zh.json      Display metadata (Chinese)
 docs/DETAIL.md      Detail page shown in the plugin list
+docs/RELEASE.md     Release checklist for bumping a version
 scripts/canary.mjs  Post-upgrade check (read-only session-log scan)
 scripts/selftest.mjs  Fake-host check of the write surface, model selection and timeout
 icon.svg            Plugin icon

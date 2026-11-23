@@ -97,6 +97,7 @@ cordis.patch.yml    Bundle 补丁
 locale/en.json      展示元数据（英文）
 locale/zh.json      展示元数据（中文）
 docs/DETAIL.md      插件列表里的详情页
+docs/RELEASE.md     升版本号后的发版清单
 scripts/canary.mjs  升级后自检（只读扫描会话日志）
 scripts/selftest.mjs 写入面、模型选型与超时诊断的自检
 icon.svg            插件图标
