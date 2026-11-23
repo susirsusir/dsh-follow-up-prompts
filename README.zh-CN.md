@@ -43,6 +43,8 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 升级只需重启：已有安装保持缺省 `auto`，不需要额外配置。
 
+![输入框上方浮现的三条后续建议，每条右侧各有发送箭头](assets/screenshot-1.png)
+
 ## 工作原理
 
 | 半边 | 文件 | 职责 |

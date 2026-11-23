@@ -45,6 +45,8 @@ Then restart DeepSeek Harness so the Host and Client halves load.
 
 Upgrading is just a restart: existing installs keep the default `auto`, and nothing needs to be configured.
 
+![Three follow-up suggestions sitting above the composer, each with its own send arrow](assets/screenshot-1.png)
+
 ## How it works
 
 | Half | File | Responsibility |
