@@ -22,17 +22,23 @@
 ## 环境要求
 
 - DeepSeek Harness `>= 0.2.2-rc.5 < 0.3.0`（`engines.dsh`；不满足时 DSH 会拒绝安装或启用，用一个精确到版本的豁免可以强行装上，见 DSH 的插件版本豁免）。
-- 无运行时依赖，也不需要 `npm install`。
+- 无运行时依赖。
 
 ## 安装
 
-把整个目录作为 bundle 安装（本地目录安装是软链接，改完源码重启即生效）：
+已发布到 npm：[`dsh-follow-up-prompts`](https://www.npmjs.com/package/dsh-follow-up-prompts)，可以直接按包名安装：
+
+```
+plugin_manager install_bundle target=dsh-follow-up-prompts
+```
+
+想在本地改源码，就把目录作为 bundle 安装（本地目录安装是软链接，改完重启即生效）：
 
 ```
 plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 ```
 
-然后重启 DeepSeek Harness，让 Host 与 Client 两半都加载。
+然后重启 DeepSeek Harness，让 Host 与 Client 两半都加载。卸载用 `plugin_manager remove_bundle target=dsh-follow-up-prompts`。
 
 ## 1.1.4 有什么变化
 

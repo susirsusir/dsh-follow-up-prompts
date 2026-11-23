@@ -1,6 +1,6 @@
 # 发版手册
 
-把 `package.json` 的版本号往上抬一位之后，还需要走完这份清单。前半段（1–4）在本地完成，后半段（5–9）是推到 GitHub 上并对市场生效。
+把 `package.json` 的版本号往上抬一位之后，还需要走完这份清单。前半段（1–4）在本地完成，5–9 推到 GitHub 并对市场生效，第 10 节是 npm，第 11 节是市场侧。
 
 先看第 0 节确认该不该发版——这条最容易判断错。
 
@@ -13,7 +13,7 @@
 | `index.js` / `client.js` / `locale/*.json` / `cordis.patch.yml` 有变化 | 是 |
 | 新增或修改了要进包的文件（图标、截图、`screenshots.json`、脚本） | 是 |
 | 只有仓库里的 README 措辞变化、且不影响包内其他文件 | 可以只推 `main` |
-| 改了 `package.json` 的 `version` 本身 | 是，且必须打 tag |
+| 改了 `package.json` 的 `version` 本身 | 是，且必须打 tag；npm 上也要有同名版本 |
 
 版本号按语义走：修 bug 抬 patch（`1.1.3 → 1.1.4`），加配置项/行为变化抬 minor（`1.1.4 → 1.2.0`）。
 
@@ -164,14 +164,40 @@ git ls-remote --tags origin | grep "v<版本>$"
 
 sha256 前缀与第 3 节记下的一致、包内 `version` 等于目标版本，即可。
 
-## 10. 市场侧
+## 10. npm
+
+包已发布为 [`dsh-follow-up-prompts`](https://www.npmjs.com/package/dsh-follow-up-prompts)（账号 `susirsusir`）。用户可以用 `plugin_manager install_bundle target=dsh-follow-up-prompts` 按包名安装，所以 **GitHub 发版后要同步发 npm**，否则按包名装到的是旧版本。
+
+```bash
+npm whoami                      # 应为 susirsusir
+npm publish                     # 读 package.json 的 version，无需再指定
+```
+
+顺序很关键：`npm publish` 必须在第 1 节改完 `files` **之后**。第 3 节用 `npm pack` 打的就是要发布的那份内容，发布前用下面这句核对一遍再发：
+
+```bash
+npm publish --dry-run           # 列出将进包的文件，确认 assets/ 之类都在
+```
+
+发布后验证线上拿到的确实是这份：
+
+```bash
+npm view dsh-follow-up-prompts version dist.tarball
+cd /tmp && npm pack dsh-follow-up-prompts@<版本> && tar -tzf dsh-follow-up-prompts-<版本>.tgz
+```
+
+`npm view` 的 `version` 等于目标版本、且 tarball 里有新素材，才算发完。
+
+> 已发出去的版本不能再改：`npm unpublish` 有 72 小时限制，而且会让装过的人下次安装失败。发现包内容不对就抬版本重发。
+
+## 11. 市场侧
 
 - **不需要改 PR**。`awesome-dsh-plugin` 里那一条（`data/plugins/susirsusir__dsh-follow-up-prompts.yml`）的 `tarball:` 指向 `latest/download`，发版即自动切到新包；只有 `icon:` 指向 `raw.githubusercontent.com/.../main/...` 时才依赖 `main`，不依赖 tag。
 - 目录索引每天约 **06:23 UTC** 重建一次，卡片版本号在之后一次构建才变。当天发版当天看不到新版本号是正常的。
 - 如果改了截图，只需要推自己的 `main`（市场从仓库根目录的 `screenshots.json` 读图），同样等下一次构建。
 - 首次收录/新增条目才需要往 `awesome-dsh-plugin` 提 PR；发新版本不用。
 
-## 11. 踩过的坑
+## 12. 踩过的坑
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
@@ -181,4 +207,5 @@ sha256 前缀与第 3 节记下的一致、包内 `version` 等于目标版本�
 | `git push` 反复失败 | 到 GitHub 的网络抖动 | 重试循环，别改远端配置 |
 | 上传资产 404 | Release 建在还没推上去的 tag 上 | 先推 tag，再建 Release |
 | 列表里图标不显示 | 用了 SVG 或第三方图床 | 换成 GitHub 托管的 PNG/JPG/WEBP |
-| npm 路线 | 未采用 | 名字 `dsh-follow-up-prompts` 在 npm 上仍空闲，但装不了 npm 就不要发 npm |
+| `install_bundle target=dsh-follow-up-prompts` 装到旧版本 | 只发了 GitHub、没 `npm publish` | 补发 npm；npm 版本号必须与 tag 一致 |
+| npm 上的包缺 `assets/` | 先 publish 才补 `files` 白名单（1.1.4 就是这样） | 抬版本重发，别试图改已发布的包 |

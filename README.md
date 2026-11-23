@@ -24,17 +24,23 @@ Each suggestion is a single piece of text: what you read on the chip is exactly 
 ## Requirements
 
 - DeepSeek Harness `>= 0.2.2-rc.5 < 0.3.0` (`engines.dsh`) with the `conversation.input.dock` slot. DSH refuses to install or enable a plugin outside that range unless a version exemption is granted for the exact pair.
-- No runtime dependencies, no `npm install`.
+- No runtime dependencies.
 
 ## Install
 
-Install the folder as a bundle (a local folder install is linked, so edits to the source take effect after a restart):
+Published on npm as [`dsh-follow-up-prompts`](https://www.npmjs.com/package/dsh-follow-up-prompts), so it installs by name:
+
+```
+plugin_manager install_bundle target=dsh-follow-up-prompts
+```
+
+To work on a local checkout instead, install the folder — that install is linked, so edits to the source take effect after a restart:
 
 ```
 plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 ```
 
-Then restart DeepSeek Harness so the Host and Client halves load.
+Then restart DeepSeek Harness so the Host and Client halves load. To uninstall, `plugin_manager remove_bundle target=dsh-follow-up-prompts`.
 
 ## What's new in 1.1.4
 
