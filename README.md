@@ -71,6 +71,8 @@ npm run selftest   # fake host covering write surface present/missing/throwing
 
 `canary` exits non-zero only when it finds events that would make a session unreadable; it scans sessions modified in the last 14 days (`--days N`, `--all` for everything).
 
+To see the notice row in the real UI, launch DeepSeek Harness with `DSH_FOLLOW_UP_PROMPTS_FORCE_UNAVAILABLE=1`: the plugin then treats itself as having no write surface, writes nothing, calls no model, and leaves only that row.
+
 ## Privacy
 
 The turn text is sent only to the provider and route the session already uses. Nothing else leaves the machine and there is no telemetry.

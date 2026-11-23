@@ -35,6 +35,7 @@ window.__ModuleLoader__.load({
       'nav.prev': 'Scroll suggestions left',
       'nav.next': 'Scroll suggestions right',
       'hint.rule': 'Click to add to the input (double-click to send) · ↑ sends now',
+      'notice.unavailable': 'Suggestions unavailable',
     }
 
     /** 两类词典；扁平点分 key，与 locale 服务约定一致。 */
@@ -46,6 +47,7 @@ window.__ModuleLoader__.load({
       'nav.prev': 'Scroll suggestions left',
       'nav.next': 'Scroll suggestions right',
       'hint.rule': 'Click to add to the input (double-click to send) · ↑ sends now',
+      'notice.unavailable': 'Suggestions unavailable',
     }
     const zh = {
       'suggestions.label': '后续指令建议',
@@ -55,6 +57,7 @@ window.__ModuleLoader__.load({
       'nav.prev': '向左查看更多建议',
       'nav.next': '向右查看更多建议',
       'hint.rule': '点击添加到输入框（双击以选择并发送）· ↑ 立即发送',
+      'notice.unavailable': '建议功能不可用',
     }
 
     const CSS = [
@@ -83,6 +86,10 @@ window.__ModuleLoader__.load({
       '.nsx-bar:hover .nsx-dismiss:not([data-held="true"]),.nsx-dismiss:not([data-held="true"]):focus-visible{opacity:1;pointer-events:auto;}',
       '.nsx-dismiss:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);}',
       '@media (prefers-reduced-motion:no-preference){.nsx-card{animation:nsx-in 140ms ease-out;}@keyframes nsx-in{from{opacity:0;transform:translateY(2px);}to{opacity:1;transform:none;}}}',
+      // 写入面不可用时的提示行：与建议卡同高，虚线边框表示这是状态而不是建议。
+      '.nsx-notice{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;box-sizing:border-box;height:32px;padding:0 12px;border:1px dashed var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;}',
+      '.nsx-notice svg{flex:0 0 auto;color:var(--dsw-alias-label-tertiary);}',
+      '.nsx-notice-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
       // 悬停浮层：完整文案 + 操作规则。挂到 body 上，宽度随内容，最大与对话框同宽，不限行数。
       '.nsx-hint{position:fixed;z-index:2147483000;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:10px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-md);background:var(--dsw-specific-menu);box-shadow:var(--dsw-elevation-panel);pointer-events:none;opacity:0;transition:opacity 120ms ease;}',
       '.nsx-hint-visible{opacity:1;}',
@@ -144,6 +151,22 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** 警示三角：写入面失效时提示行前面的小图标。 */
+    function AlertIcon() {
+      return h(
+        'svg',
+        { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true, focusable: false },
+        h('path', {
+          d: 'M8 2.6 14.2 13.4H1.8L8 2.6Z',
+          stroke: 'currentColor',
+          strokeWidth: 1.4,
+          strokeLinejoin: 'round',
+        }),
+        h('path', { d: 'M8 6.6v2.9', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round' }),
+        h('circle', { cx: 8, cy: 11.4, r: 0.8, fill: 'currentColor' }),
+      )
+    }
+
     /** 收起用的叉号。 */
     function CloseIcon() {
       return h(
@@ -170,6 +193,11 @@ window.__ModuleLoader__.load({
 
       const items = projection && Array.isArray(projection.items) ? projection.items : []
       const turn = projection && typeof projection.turn === 'number' ? projection.turn : 0
+      // Host 在写入面失效时把这一项填上：此时没有任何事件可写，只能靠视图带过来。
+      const unavailable =
+        projection && projection.unavailable !== null && typeof projection.unavailable === 'object'
+          ? projection.unavailable
+          : null
 
       /** 用户主动收起的轮次：`{ sessionId, turn }`。 */
       const [dismissed, setDismissed] = useState(null)
@@ -371,9 +399,40 @@ window.__ModuleLoader__.load({
         [draft, inputActions],
       )
 
+      if (hidden) return null
+      if (unavailable !== null) {
+        // 写入面失效：不显示（已经过期的）建议，改成一行状态说明，并保留悬浮提示的原因。
+        const reason = typeof unavailable.reason === 'string' ? unavailable.reason : ''
+        return h(
+          'div',
+          { className: 'nsx-dock', ref: dockRef, 'data-state': 'unavailable' },
+          h('style', { key: 'nsx-style' }, CSS),
+          h(
+            'div',
+            { className: 'nsx-bar' },
+            h(
+              'div',
+              { className: 'nsx-notice', role: 'status', title: reason === '' ? undefined : reason },
+              h(AlertIcon),
+              h('span', { className: 'nsx-notice-text' }, translate('notice.unavailable')),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'nsx-dismiss',
+                title: translate('suggestion.dismiss'),
+                'aria-label': translate('suggestion.dismiss'),
+                tabIndex: 0,
+                onClick: dismiss,
+              },
+              h(CloseIcon),
+            ),
+          ),
+        )
+      }
       if (items.length === 0) return null
       if (running) return null
-      if (hidden) return null
 
       const cards = []
       for (let index = 0; index < items.length; index += 1) {

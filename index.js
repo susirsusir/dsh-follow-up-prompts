@@ -26,14 +26,47 @@ function describe(error) {
 }
 
 /**
- * 同一个原因只报一次：既有宿主日志（`ctx.logger.warn`），也留一条诊断记录。
- * 升级导致写入面变化时，宿主日志能直接看到，不必去翻临时目录。
+ * 写入面可用性：按会话记，只活在内存里。
+ *
+ * 它不进会话日志（写入面坏了就写不进去），也不进 projection state（旧会话
+ * 恢复时会读到过期结论），只作为 `wire.view` 的输入：投影视图每次被读取时
+ * 顺带带上当前结论，Client 据此把「没有建议」换成「建议功能不可用」。
+ */
+const availability = new Map()
+/** 上限只防止异常情况下无限增长；正常使用远到不了。 */
+const AVAILABILITY_LIMIT = 256
+
+function noteAvailability(session, status) {
+  const id = typeof session?.id === 'string' ? session.id : ''
+  if (id === '') return
+  availability.delete(id)
+  availability.set(id, status)
+  if (availability.size > AVAILABILITY_LIMIT) {
+    const oldest = availability.keys().next().value
+    if (oldest !== undefined) availability.delete(oldest)
+  }
+}
+
+function markUnavailable(session, reason) {
+  noteAvailability(session, { available: false, reason })
+}
+
+function markAvailable(session) {
+  noteAvailability(session, { available: true, reason: '' })
+}
+
+/**
+ * 同一个会话的同一个原因只报一次：既有宿主日志（`ctx.logger.warn`），
+ * 也留一条诊断记录。升级导致写入面变化时，宿主日志能直接看到，不必去翻临时目录。
  */
 function createReporter(ctx) {
   const reported = new Set()
-  return (key, message) => {
-    if (reported.has(key)) return
-    reported.add(key)
+  return (session, key, message) => {
+    // 即使已经报过，也要让建议条切到「不可用」：状态是给用户看的，告警是给日志看的。
+    markUnavailable(session, message)
+    const scoped = `${typeof session?.id === 'string' ? session.id : ''}\u0000${key}`
+    if (reported.has(scoped)) return
+    reported.add(scoped)
     debug('guard/report', { key, message })
     try {
       ctx.logger?.warn?.(`[dsh-follow-up-prompts] ${message}`)
@@ -41,6 +74,26 @@ function createReporter(ctx) {
       // 宿主没有 logger 时只留诊断日志。
     }
   }
+}
+
+/** Client 视图：未降级时就是折叠出的数据，降级时换成一行提示。 */
+const viewCache = new WeakMap()
+
+function viewOf(state) {
+  const status = state.sessionId === '' ? undefined : availability.get(state.sessionId)
+  const reason = status !== undefined && status.available === false ? status.reason : ''
+  const cached = viewCache.get(state)
+  // 视图对象必须复用引用，否则每次驱赶都当作变化推给 Client。
+  if (cached !== undefined && cached.reason === reason) return cached.view
+  const view = {
+    turn: state.turn,
+    // 写入面不可用时，上一轮的建议已经过期，直接不展示，换成提示行。
+    items: reason === '' ? state.items : [],
+    createdAt: state.createdAt,
+    unavailable: reason === '' ? null : { reason },
+  }
+  viewCache.set(state, { reason, view })
+  return view
 }
 
 /** projection key，Client 通过 useProjection('followUpPrompts') 读取。 */
@@ -71,6 +124,20 @@ const ASSISTANT_EXCERPT_CHARS = 4_000
  */
 const REQUIRED_WRITE_METHODS = ['publicationEntry', 'commit']
 
+/**
+ * 自检开关：设为 1 时把本插件当作「写入面不可用」，用来在实际界面上确认
+ * 提示行长什么样，而不用真的等一次 DSH 升级把它弄坏。
+ */
+const FORCE_ENV = 'DSH_FOLLOW_UP_PROMPTS_FORCE_UNAVAILABLE'
+
+function forcedUnavailable() {
+  try {
+    return process.env[FORCE_ENV] === '1'
+  } catch {
+    return false
+  }
+}
+
 /** 返回当前会话缺失的写入面方法名（空数组表示可用）。 */
 function missingWriteMethods(session) {
   return REQUIRED_WRITE_METHODS.filter((name) => typeof session?.[name] !== 'function')
@@ -98,6 +165,7 @@ function appendReadyRecord(session, payload) {
     ignorable: true,
   })
   session.commit(event, entry)
+  markAvailable(session)
 }
 
 const SYSTEM_PROMPT = [
@@ -118,8 +186,8 @@ export function apply(ctx) {
   /** 按会话累积本轮的输入、输出与模型路由（WeakMap 不会阻止会话被回收）。 */
   const states = new WeakMap()
   const report = createReporter(ctx)
-  /** 首次见到会话时检查一次写入面，让「升级后不兼容」在第一条事件上就现形。 */
-  let probed = false
+  /** 每个会话首次见到时检查一次写入面，让「升级后不兼容」在第一条事件上就现形。 */
+  const probed = new WeakSet()
 
   const stateOf = (session) => {
     let state = states.get(session)
@@ -139,19 +207,30 @@ export function apply(ctx) {
         key: PROJECTION_KEY,
         // 纯 JS 插件不依赖 zod，运行时只需要 parse 方法存在。
         stateSchema: { parse: (value) => value },
-        init: () => ({ turn: 0, items: [], createdAt: 0 }),
+        // sessionId 进入 state，视图才能查到该会话的运行时可用性。
+        init: (header) => ({
+          sessionId: typeof header?.id === 'string' ? header.id : '',
+          turn: 0,
+          items: [],
+          createdAt: 0,
+        }),
         apply: (state, event) => {
           // 新旧两种记录都折叠，保证升级后历史建议仍然可见。
           if (event.type !== EVENT_TYPE && event.type !== LEGACY_EVENT_TYPE) return state
           const data = event.data
           if (data === null || typeof data !== 'object' || !Array.isArray(data.items)) return state
-          return { turn: Number(data.turn) || 0, items: data.items, createdAt: Number(data.createdAt) || 0 }
+          return {
+            ...state,
+            turn: Number(data.turn) || 0,
+            items: data.items,
+            createdAt: Number(data.createdAt) || 0,
+          }
         },
         wire: {
           viewSchema: { parse: (value) => value },
-          view: (state) => state,
+          view: viewOf,
         },
-        stateVersion: 1,
+        stateVersion: 2,
       })
       .then(
         (value) => {
@@ -171,11 +250,18 @@ export function apply(ctx) {
 
   const onEvent = (session, event) => {
     if (event === null || typeof event !== 'object') return
-    if (!probed) {
-      probed = true
-      const missing = missingWriteMethods(session)
-      if (missing.length !== 0) {
-        report('write-surface', `当前 DSH 未提供 ${missing.join(' / ')}，建议功能不可用（本轮起不再请求模型）`)
+    if (!probed.has(session)) {
+      probed.add(session)
+      // 子会话本来就不产生建议，不必为它探测写入面，也不会在子会话界面挂提示。
+      if (session.header?.origin !== 'subagent') {
+        if (forcedUnavailable()) {
+          report(session, 'forced', `建议功能不可用（${FORCE_ENV}=1，自检用）`)
+          return
+        }
+        const missing = missingWriteMethods(session)
+        if (missing.length !== 0) {
+          report(session, 'write-surface', `当前 DSH 未提供 ${missing.join(' / ')}，建议功能不可用（本轮起不再请求模型）`)
+        }
       }
     }
     const type = event.type
@@ -210,7 +296,7 @@ export function apply(ctx) {
           } catch (error) {
             // 会话已销毁时同样落到这里：只记一条，不打断新一轮。
             debug('guard/clear-failed', { turn, error: describe(error) })
-            report(`clear:${describe(error)}`, `清空上一轮建议失败：${describe(error)}`)
+            report(session, `clear:${describe(error)}`, `清空上一轮建议失败：${describe(error)}`)
           }
         }, 0)
       }
@@ -270,6 +356,10 @@ export function apply(ctx) {
       debug('skip/no-write-surface', { turn: snapshot.turn, missing })
       return
     }
+    if (forcedUnavailable()) {
+      debug('skip/forced-unavailable', { turn: snapshot.turn })
+      return
+    }
     // 请求头事件只在配置变化时写入，长时间未变更时会缺省，因此优先读会话缓存的 header。
     const route = readRoute(session) ?? state.route
     if (route === undefined) {
@@ -324,7 +414,7 @@ export function apply(ctx) {
     } catch (error) {
       debug('suggest/append-failed', { turn: snapshot.turn, error: describe(error) })
       // 会话已销毁或数据不可序列化时静默放弃；同样的原因只告警一次。
-      report(`append:${describe(error)}`, `第 ${snapshot.turn} 轮建议写入失败：${describe(error)}`)
+      report(session, `append:${describe(error)}`, `第 ${snapshot.turn} 轮建议写入失败：${describe(error)}`)
     }
   }
 

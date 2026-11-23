@@ -59,7 +59,7 @@ function makeHarness(mode) {
   const session = {
     id: 'selftest',
     seq: 42,
-    header: {},
+    header: { id: 'selftest' },
     requestHeader: () => ({ config: { provider: 'test', model: 'test' } }),
   }
   if (mode !== 'missing') {
@@ -107,8 +107,11 @@ async function runCase(name) {
     check('事件带 items 数据', Array.isArray(event?.data?.items) && event.data.items[0]?.prompt === '补充单测')
     check('记录了 append 成功', log.includes('suggest/appended'))
     const spec = harness.projectionSpec
-    const folded = spec?.apply(spec.init(), event)
+    const folded = spec?.apply(spec.init({ id: 'selftest' }), event)
     check('projection 能折叠出建议', folded?.items?.length === 1)
+    const view = spec?.wire?.view(folded)
+    check('可用时视图不带提示', view?.unavailable === null)
+    check('可用时视图保留建议', view?.items?.length === 1)
     check('没有误报告警', harness.warns.length === 0)
   }
 
@@ -117,6 +120,10 @@ async function runCase(name) {
     check('没有请求模型（省掉无效调用）', harness.calls.llm === 0)
     check('首次事件即告警', harness.warns.some((message) => /publicationEntry|commit/.test(message)))
     check('诊断日志记录守卫原因', log.includes('guard/report'))
+    const spec = harness.projectionSpec
+    const view = spec?.wire?.view(spec.init({ id: 'selftest' }))
+    check('视图带不可用提示', view?.unavailable !== null && typeof view?.unavailable?.reason === 'string')
+    check('不可用时不展示旧建议', Array.isArray(view?.items) && view.items.length === 0)
   }
 
   if (name === 'throw') {
@@ -124,6 +131,9 @@ async function runCase(name) {
     check('仍然请求了模型（写入前无法预判）', harness.calls.llm === 1)
     check('记录了 append 失败', log.includes('suggest/append-failed'))
     check('告警包含失败原因', harness.warns.some((message) => message.includes('commit rejected')))
+    const spec = harness.projectionSpec
+    const view = spec?.wire?.view(spec.init({ id: 'selftest' }))
+    check('写入失败后视图提示不可用', view?.unavailable !== null)
   }
 
   const failed = assertions.filter((assertion) => !assertion.ok)
