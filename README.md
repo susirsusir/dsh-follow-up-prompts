@@ -36,6 +36,12 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 Then restart DeepSeek Harness so the Host and Client halves load.
 
+## What's new in 1.1.4
+
+Packaging only, no behaviour change: the published tarball now ships its own storefront assets (`assets/icon-180.png`, `assets/screenshot-1.png`, `screenshots.json`), so the screenshot below renders inside the package too. Upgrading from 1.1.3 is just a restart.
+
+![Three follow-up suggestions sitting above the composer, each with its own send arrow](assets/screenshot-1.png)
+
 ## What's new in 1.1.3
 
 - **Suggestions no longer run on the turn's model.** A follow-up is three short instructions, and reusing the heavy model that just answered is slow, expensive, and — in long sessions — the thing that pushed the request past its deadline. The default `auto` picks a lightweight model on the same provider; if the provider offers nothing cheaper it keeps the turn's model, so the behaviour degrades to the old one instead of disappearing.
@@ -44,8 +50,6 @@ Then restart DeepSeek Harness so the Host and Client halves load.
 - **New `suggestionModel` setting** to pin the choice: `auto` (default), `session`, `provider/model`, or `model`.
 
 Upgrading is just a restart: existing installs keep the default `auto`, and nothing needs to be configured.
-
-![Three follow-up suggestions sitting above the composer, each with its own send arrow](assets/screenshot-1.png)
 
 ## How it works
 

@@ -34,6 +34,12 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 然后重启 DeepSeek Harness，让 Host 与 Client 两半都加载。
 
+## 1.1.4 有什么变化
+
+只有打包变化，行为没动：发布出来的 tarball 现在带着自己的展示素材（`assets/icon-180.png`、`assets/screenshot-1.png`、`screenshots.json`），所以下面这张图在包内也能正常显示。从 1.1.3 升级只需重启。
+
+![输入框上方浮现的三条后续建议，每条右侧各有发送箭头](assets/screenshot-1.png)
+
 ## 1.1.3 有什么变化
 
 - **建议不再跑在本轮的重模型上。** 建议只是三条短指令，复用刚回答完的重模型既慢又贵；长会话里它还是把请求推过超时线的直接原因。缺省 `auto` 会在同一 provider 内挑一个轻模型；provider 里没有更便宜的就沿用本轮模型，最坏情况退回旧行为，而不是让建议消失。
@@ -42,8 +48,6 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 - **新增 `suggestionModel` 配置**固定选型：`auto`（缺省）、`session`、`provider/model` 或 `model`。
 
 升级只需重启：已有安装保持缺省 `auto`，不需要额外配置。
-
-![输入框上方浮现的三条后续建议，每条右侧各有发送箭头](assets/screenshot-1.png)
 
 ## 工作原理
 
