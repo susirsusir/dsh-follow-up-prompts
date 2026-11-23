@@ -208,4 +208,5 @@ cd /tmp && npm pack dsh-follow-up-prompts@<版本> && tar -tzf dsh-follow-up-pro
 | 上传资产 404 | Release 建在还没推上去的 tag 上 | 先推 tag，再建 Release |
 | 列表里图标不显示 | 用了 SVG 或第三方图床 | 换成 GitHub 托管的 PNG/JPG/WEBP |
 | `install_bundle target=dsh-follow-up-prompts` 装到旧版本 | 只发了 GitHub、没 `npm publish` | 补发 npm；npm 版本号必须与 tag 一致 |
+| `npm view` 显示新版本，`npm pack` 仍报 `ETARGET` | 本地 packument 缓存没刷新 | `npm pack <包名>@<版本> --prefer-online` |
 | npm 上的包缺 `assets/` | 先 publish 才补 `files` 白名单（1.1.4 就是这样） | 抬版本重发，别试图改已发布的包 |
