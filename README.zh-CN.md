@@ -40,6 +40,10 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 然后重启 DeepSeek Harness，让 Host 与 Client 两半都加载。卸载用 `plugin_manager remove_bundle target=dsh-follow-up-prompts`。
 
+## 1.1.6 有什么变化
+
+修一个浮层卡住的问题。悬停建议后切到别的应用，或者新一轮把建议条整个换掉，浮层会留在屏幕上，而且坐标早已失效；此时把指针挪到别处它也还在。现在来源卡片卸载、窗口失焦或隐藏、轮次变化、滚动与改尺寸都会把它收掉，另外还有一次指针移动的校验兜底。重启即生效。
+
 ## 1.1.4 有什么变化
 
 只有打包变化，行为没动：发布出来的 tarball 现在带着自己的展示素材（`assets/icon-180.png`、`assets/screenshot-1.png`、`screenshots.json`），所以下面这张图在包内也能正常显示。从 1.1.3 升级只需重启。

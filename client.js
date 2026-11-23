@@ -333,12 +333,18 @@ window.__ModuleLoader__.load({
         setHint(null)
       }, [])
 
-      /** 悬停 HINT_DELAY 后在卡片上方弹出浮层；拿不到 portal 时静默跳过。 */
-      const showHint = useCallback((node, text) => {
+      /**
+       * 悬停 HINT_DELAY 后在卡片上方弹出浮层；拿不到 portal 时静默跳过。
+       * `via` 区分指针悬停与键盘聚焦，两种来源的失效条件不同。
+       */
+      const showHint = useCallback((node, text, via) => {
         if (createPortal === null || node === null || node === undefined) return
         if (hintTimer.current !== null) clearTimeout(hintTimer.current)
         hintTimer.current = setTimeout(() => {
           hintTimer.current = null
+          // 计时器可能在切到后台或卡片已被卸载之后才到点，此时弹出来就是幽灵浮层。
+          if (!node.isConnected || document.hidden) return
+          if (via === 'hover' ? !node.matches(':hover') : !node.contains(document.activeElement)) return
           const rect = node.getBoundingClientRect()
           const dockRect = dockRef.current !== null ? dockRef.current.getBoundingClientRect() : null
           const base = dockRect !== null && dockRect.width > 0 ? dockRect.left : rect.left
@@ -349,6 +355,8 @@ window.__ModuleLoader__.load({
           setHintLeft(rect.left)
           setHint({
             text,
+            node,
+            via,
             anchor: rect,
             base,
             maxRight,
@@ -361,6 +369,11 @@ window.__ModuleLoader__.load({
       // 浮层宽度随内容变化，渲染后按实际宽度把它拉回对话框范围内，再显形。
       useEffect(() => {
         if (hint === null) return undefined
+        // 来源卡片已经被卸载（比如换了一轮），浮层没有可信坐标，直接收掉。
+        if (!hint.node.isConnected || document.hidden) {
+          hideHint()
+          return undefined
+        }
         const node = hintRef.current
         if (node === null) return undefined
         const width = node.getBoundingClientRect().width
@@ -373,7 +386,7 @@ window.__ModuleLoader__.load({
         }
         setHintShown(true)
         return undefined
-      }, [hint, hintLeft])
+      }, [hint, hintLeft, hideHint])
 
       // 卸载时清掉两个计时器，避免离开会话后还回调。
       useEffect(
@@ -383,6 +396,60 @@ window.__ModuleLoader__.load({
         },
         [],
       )
+
+      // 浮层只该在当前轮、当前可见、且来源仍然有效时存在。
+      // 轮次切换会让卡片整体重建，旧元素被卸载时不会派发 mouseleave，这一处是兜底。
+      useEffect(() => {
+        hideHint()
+      }, [turn, running, hidden, hideHint])
+
+      // 窗口失焦、页面隐藏、指针取消都属于「输入已经离开」，浮层必须收掉。
+      useEffect(() => {
+        if (hint === null) return undefined
+        const onBlur = () => hideHint()
+        const onVisibility = () => {
+          if (document.hidden) hideHint()
+        }
+        window.addEventListener('blur', onBlur)
+        document.addEventListener('visibilitychange', onVisibility)
+        window.addEventListener('pointercancel', onBlur)
+        // fixed 定位的坐标在任何滚动或改尺寸之后都会失真，与其重算不如直接收起。
+        window.addEventListener('scroll', onBlur, true)
+        window.addEventListener('resize', onBlur)
+        return () => {
+          window.removeEventListener('blur', onBlur)
+          document.removeEventListener('visibilitychange', onVisibility)
+          window.removeEventListener('pointercancel', onBlur)
+          window.removeEventListener('scroll', onBlur, true)
+          window.removeEventListener('resize', onBlur)
+        }
+      }, [hint, hideHint])
+
+      // 指针一旦离开来源卡片就收起：不依赖 mouseleave，浏览器漏发时也能自愈。
+      useEffect(() => {
+        if (hint === null) return undefined
+        const node = hint.node
+        let frame = 0
+        const onMove = (event) => {
+          const x = event.clientX
+          const y = event.clientY
+          if (frame !== 0) return
+          frame = requestAnimationFrame(() => {
+            frame = 0
+            if (!node.isConnected) {
+              hideHint()
+              return
+            }
+            const rect = node.getBoundingClientRect()
+            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) hideHint()
+          })
+        }
+        window.addEventListener('pointermove', onMove, { passive: true })
+        return () => {
+          window.removeEventListener('pointermove', onMove)
+          if (frame !== 0) cancelAnimationFrame(frame)
+        }
+      }, [hint, hideHint])
 
       const fill = useCallback(
         (prompt) => {
@@ -448,7 +515,7 @@ window.__ModuleLoader__.load({
             {
               key: `${turn}-${index}`,
               className: 'nsx-card',
-              onMouseEnter: (event) => showHint(event.currentTarget, text),
+              onMouseEnter: (event) => showHint(event.currentTarget, text, 'hover'),
               onMouseLeave: hideHint,
             },
             h(
@@ -471,7 +538,7 @@ window.__ModuleLoader__.load({
                   }
                   sendNow(text)
                 },
-                onFocus: (event) => showHint(event.currentTarget, text),
+                onFocus: (event) => showHint(event.currentTarget, text, 'focus'),
                 onBlur: hideHint,
               },
               clipCardText(text),

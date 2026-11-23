@@ -42,6 +42,10 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 Then restart DeepSeek Harness so the Host and Client halves load. To uninstall, `plugin_manager remove_bundle target=dsh-follow-up-prompts`.
 
+## What's new in 1.1.6
+
+A hover tooltip could get stuck. If you hovered a suggestion and then switched apps — or a new turn replaced the suggestion row — the card stayed on screen at coordinates that no longer meant anything, and moving the pointer elsewhere did not dismiss it. The tooltip now drops its state when the card it came from unmounts, when the window loses focus or goes hidden, when the turn changes, and on scroll or resize; a pointer-move check backs all of that up. Restart to pick it up.
+
 ## What's new in 1.1.4
 
 Packaging only, no behaviour change: the published tarball now ships its own storefront assets (`assets/icon-180.png`, `assets/screenshot-1.png`, `screenshots.json`), so the screenshot below renders inside the package too. Upgrading from 1.1.3 is just a restart.
