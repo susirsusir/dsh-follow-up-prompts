@@ -112,6 +112,12 @@ async function runCase(name) {
     const view = spec?.wire?.view(folded)
     check('可用时视图不带提示', view?.unavailable === null)
     check('可用时视图保留建议', view?.items?.length === 1)
+    // 关键机制：投影只在 state 引用变化时重算视图，运行时状态（写入面可用性）
+    // 必须靠无关事件推进 rev 才能被 Client 看到。
+    const bumped = spec?.apply(folded, { type: 'unrelated/event' })
+    check('无关事件也推进 rev（视图才有机会重算）', bumped !== folded && bumped?.rev === folded.rev + 1)
+    const sameView = spec?.wire?.view(bumped)
+    check('内容未变时复用视图引用（不惊动 Client）', sameView === view)
     check('没有误报告警', harness.warns.length === 0)
   }
 
@@ -124,6 +130,9 @@ async function runCase(name) {
     const view = spec?.wire?.view(spec.init({ id: 'selftest' }))
     check('视图带不可用提示', view?.unavailable !== null && typeof view?.unavailable?.reason === 'string')
     check('不可用时不展示旧建议', Array.isArray(view?.items) && view.items.length === 0)
+    // 降级发生后才来的事件，必须还能把「不可用」带给 Client。
+    const advanced = spec?.apply(spec.init({ id: 'selftest' }), { type: 'unrelated/event' })
+    check('无关事件推进后视图仍带提示', spec?.wire?.view(advanced)?.unavailable !== null)
   }
 
   if (name === 'throw') {

@@ -76,23 +76,40 @@ function createReporter(ctx) {
   }
 }
 
-/** Client 视图：未降级时就是折叠出的数据，降级时换成一行提示。 */
-const viewCache = new WeakMap()
+/** 降级时展示的空列表；固定引用，避免视图被误判成变化。 */
+const NO_ITEMS = Object.freeze([])
+/** Client 视图：未降级时就是折叠出的数据，降级时换成一行提示。按会话缓存。 */
+const VIEW_CACHE_LIMIT = 32
+const viewCache = new Map()
 
 function viewOf(state) {
   const status = state.sessionId === '' ? undefined : availability.get(state.sessionId)
   const reason = status !== undefined && status.available === false ? status.reason : ''
-  const cached = viewCache.get(state)
+  // 写入面不可用时，上一轮的建议已经过期，直接不展示，换成提示行。
+  const items = reason === '' ? state.items : NO_ITEMS
+  const cached = viewCache.get(state.sessionId)
   // 视图对象必须复用引用，否则每次驱赶都当作变化推给 Client。
-  if (cached !== undefined && cached.reason === reason) return cached.view
+  if (
+    cached !== undefined &&
+    cached.reason === reason &&
+    cached.items === items &&
+    cached.turn === state.turn &&
+    cached.createdAt === state.createdAt
+  ) {
+    return cached.view
+  }
   const view = {
     turn: state.turn,
-    // 写入面不可用时，上一轮的建议已经过期，直接不展示，换成提示行。
-    items: reason === '' ? state.items : [],
+    items,
     createdAt: state.createdAt,
     unavailable: reason === '' ? null : { reason },
   }
-  viewCache.set(state, { reason, view })
+  viewCache.delete(state.sessionId)
+  viewCache.set(state.sessionId, { reason, items, turn: state.turn, createdAt: state.createdAt, view })
+  if (viewCache.size > VIEW_CACHE_LIMIT) {
+    const oldest = viewCache.keys().next().value
+    if (oldest !== undefined) viewCache.delete(oldest)
+  }
   return view
 }
 
@@ -213,14 +230,20 @@ export function apply(ctx) {
           turn: 0,
           items: [],
           createdAt: 0,
+          rev: 0,
         }),
         apply: (state, event) => {
+          // 每条事件都推进一次 rev：投影只在 state 引用变化时才重算视图，
+          // 而「写入面是否可用」是运行时状态、不可能写进日志。少了这一步，
+          // 可用性一变 Client 也读不到，提示行永远不会出现。
+          const rev = (Number(state.rev) || 0) + 1
           // 新旧两种记录都折叠，保证升级后历史建议仍然可见。
-          if (event.type !== EVENT_TYPE && event.type !== LEGACY_EVENT_TYPE) return state
+          if (event.type !== EVENT_TYPE && event.type !== LEGACY_EVENT_TYPE) return { ...state, rev }
           const data = event.data
-          if (data === null || typeof data !== 'object' || !Array.isArray(data.items)) return state
+          if (data === null || typeof data !== 'object' || !Array.isArray(data.items)) return { ...state, rev }
           return {
             ...state,
+            rev,
             turn: Number(data.turn) || 0,
             items: data.items,
             createdAt: Number(data.createdAt) || 0,
@@ -230,7 +253,8 @@ export function apply(ctx) {
           viewSchema: { parse: (value) => value },
           view: viewOf,
         },
-        stateVersion: 2,
+        // rev 让旧 checkpoints 的重放计数与新版本不一致，索性整体作废一次。
+        stateVersion: 3,
       })
       .then(
         (value) => {
