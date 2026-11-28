@@ -14,6 +14,8 @@
 
 每条建议只有一段文本：**卡片上看到的就是点击 ↑ 真正发送的内容**。指令控制在 40 字以内，超过 40 字时卡片只显示前 40 个字符加省略号，完整文案交给悬停浮层；卡片宽度由文案长度决定，几条并排时宽度并不相等。
 
+![输入框上方浮现的三条后续建议，每条右侧各有发送箭头](assets/screenshot-1.png)
+
 - **点击文案** —— 这条指令被填进输入框，你可以先改再发（会替换当前草稿）。
 - **点击 ↑** —— 直接发送这条指令。
 - **点击 › / ‹** —— 建议放不下时，整行可以横向滚动。右箭头直接滑到最后一条，左箭头回到第一条。箭头只在对应方向确实还有内容时才出现，滚动条本身隐藏。
@@ -40,24 +42,9 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 然后重启 DeepSeek Harness，让 Host 与 Client 两半都加载。卸载用 `plugin_manager remove_bundle target=dsh-follow-up-prompts`。
 
-## 1.1.6 有什么变化
+## 更新记录
 
-修一个浮层卡住的问题。悬停建议后切到别的应用，或者新一轮把建议条整个换掉，浮层会留在屏幕上，而且坐标早已失效；此时把指针挪到别处它也还在。现在来源卡片卸载、窗口失焦或隐藏、轮次变化、滚动与改尺寸都会把它收掉，另外还有一次指针移动的校验兜底。重启即生效。
-
-## 1.1.4 有什么变化
-
-只有打包变化，行为没动：发布出来的 tarball 现在带着自己的展示素材（`assets/icon-180.png`、`assets/screenshot-1.png`、`screenshots.json`），所以下面这张图在包内也能正常显示。从 1.1.3 升级只需重启。
-
-![输入框上方浮现的三条后续建议，每条右侧各有发送箭头](assets/screenshot-1.png)
-
-## 1.1.3 有什么变化
-
-- **建议不再跑在本轮的重模型上。** 建议只是三条短指令，复用刚回答完的重模型既慢又贵；长会话里它还是把请求推过超时线的直接原因。缺省 `auto` 会在同一 provider 内挑一个轻模型；provider 里没有更便宜的就沿用本轮模型，最坏情况退回旧行为，而不是让建议消失。
-- **超时从 20 秒放宽到 30 秒。** 长会话偶发超过 20 秒才回第一个 token，被中止后一条建议都没有。
-- **失败会留下痕迹。** 诊断日志现在能区分「保持本轮模型」（`suggest/model-kept`）、「选中的模型不可用，已退回」（`suggest/model-fallback`）和「撞上超时」（`suggest/timeout`），不再只是一行建议静默消失。排障时可以用 `DSH_FOLLOW_UP_PROMPTS_TIMEOUT_MS` 改超时阈值。
-- **新增 `suggestionModel` 配置**固定选型：`auto`（缺省）、`session`、`provider/model` 或 `model`。
-
-升级只需重启：已有安装保持缺省 `auto`，不需要额外配置。
+每个版本改了什么都在 [CHANGELOG.md](CHANGELOG.md)（英文）。
 
 ## 工作原理
 
@@ -111,6 +98,7 @@ cordis.patch.yml    Bundle 补丁
 locale/en.json      展示元数据（英文）
 locale/zh.json      展示元数据（中文）
 docs/DETAIL.md      插件列表里的详情页
+CHANGELOG.md        版本更新记录
 docs/RELEASE.md     升版本号后的发版清单
 scripts/canary.mjs  升级后自检（只读扫描会话日志）
 scripts/selftest.mjs 写入面、模型选型与超时诊断的自检

@@ -14,6 +14,8 @@ After every completed turn the plugin asks a model on the session's own provider
 
 Each suggestion is a single piece of text: what you read on the chip is exactly what gets sent. Prompts stay under 40 characters; longer ones are cut at 40 characters with an ellipsis on the chip, and the full text is shown in the hover card. Chip width follows the text, so chips are not equally wide.
 
+![Three follow-up suggestions sitting above the composer, each with its own send arrow](assets/screenshot-1.png)
+
 - **Click the text** — the instruction is placed into the composer draft; edit it before sending.
 - **Double-click the text** — sends that instruction right away, without stopping in the draft.
 - **Hover a chip** — after a moment a card appears above it with the full instruction and the rules of use (`Click to add to the input (double-click to send) · ↑ sends now`). The card is as wide as its content up to the composer width and never truncates; it ignores the pointer and disappears when you move away.
@@ -42,24 +44,9 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 Then restart DeepSeek Harness so the Host and Client halves load. To uninstall, `plugin_manager remove_bundle target=dsh-follow-up-prompts`.
 
-## What's new in 1.1.6
+## Changelog
 
-A hover tooltip could get stuck. If you hovered a suggestion and then switched apps — or a new turn replaced the suggestion row — the card stayed on screen at coordinates that no longer meant anything, and moving the pointer elsewhere did not dismiss it. The tooltip now drops its state when the card it came from unmounts, when the window loses focus or goes hidden, when the turn changes, and on scroll or resize; a pointer-move check backs all of that up. Restart to pick it up.
-
-## What's new in 1.1.4
-
-Packaging only, no behaviour change: the published tarball now ships its own storefront assets (`assets/icon-180.png`, `assets/screenshot-1.png`, `screenshots.json`), so the screenshot below renders inside the package too. Upgrading from 1.1.3 is just a restart.
-
-![Three follow-up suggestions sitting above the composer, each with its own send arrow](assets/screenshot-1.png)
-
-## What's new in 1.1.3
-
-- **Suggestions no longer run on the turn's model.** A follow-up is three short instructions, and reusing the heavy model that just answered is slow, expensive, and — in long sessions — the thing that pushed the request past its deadline. The default `auto` picks a lightweight model on the same provider; if the provider offers nothing cheaper it keeps the turn's model, so the behaviour degrades to the old one instead of disappearing.
-- **Timeout raised from 20 s to 30 s.** A long turn occasionally took longer than 20 s to produce its first token and was aborted with nothing to show.
-- **Failures leave a trace.** The diagnostic log now distinguishes "kept the session model" (`suggest/model-kept`), "picked model was unusable, fell back" (`suggest/model-fallback`) and "hit the deadline" (`suggest/timeout`), instead of a silently missing row. `DSH_FOLLOW_UP_PROMPTS_TIMEOUT_MS` overrides the deadline for debugging.
-- **New `suggestionModel` setting** to pin the choice: `auto` (default), `session`, `provider/model`, or `model`.
-
-Upgrading is just a restart: existing installs keep the default `auto`, and nothing needs to be configured.
+Every release and what changed in it: [CHANGELOG.md](CHANGELOG.md).
 
 ## How it works
 
@@ -112,6 +99,7 @@ cordis.patch.yml    Bundle patch
 locale/en.json      Display metadata (English)
 locale/zh.json      Display metadata (Chinese)
 docs/DETAIL.md      Detail page shown in the plugin list
+CHANGELOG.md        Release history
 docs/RELEASE.md     Release checklist for bumping a version
 scripts/canary.mjs  Post-upgrade check (read-only session-log scan)
 scripts/selftest.mjs  Fake-host check of the write surface, model selection and timeout

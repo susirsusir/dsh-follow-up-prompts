@@ -17,6 +17,16 @@
 
 版本号按语义走：修 bug 抬 patch（`1.1.3 → 1.1.4`），加配置项/行为变化抬 minor（`1.1.4 → 1.2.0`）。
 
+## 0. 先把改动写进 `CHANGELOG.md`
+
+版本变更只记在 `CHANGELOG.md`，README 里不再写「What's new」小节——README 讲的是**当前行为**，历史留在 changelog。
+
+- 在 `## [Unreleased]` 下面按 `Added` / `Changed` / `Fixed` / `Removed` 归类写本次改动，条目用粗体起头，说清「以前怎样、现在怎样」；
+- 发版时把 `## [Unreleased]` 改成 `## [<版本>] - <YYYY-MM-DD>`，并在最上面补一个新的空 `## [Unreleased]`；
+- 已有的历史条目不要改写，只追加。
+
+`CHANGELOG.md` 在 `files` 白名单里，会随包发布。
+
 ## 1. 改版本号，并检查 `files` 白名单
 
 ```bash
