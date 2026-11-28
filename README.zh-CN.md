@@ -44,7 +44,7 @@ plugin_manager install_bundle target=/absolute/path/to/dsh-follow-up-prompts
 
 ## 更新记录
 
-每个版本改了什么都在 [CHANGELOG.md](CHANGELOG.md)（英文）。
+每个版本改了什么都在中文版 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)，英文版见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 工作原理
 
@@ -98,7 +98,8 @@ cordis.patch.yml    Bundle 补丁
 locale/en.json      展示元数据（英文）
 locale/zh.json      展示元数据（中文）
 docs/DETAIL.md      插件列表里的详情页
-CHANGELOG.md        版本更新记录
+CHANGELOG.md        版本更新记录（英文）
+CHANGELOG.zh-CN.md  版本更新记录（中文）
 docs/RELEASE.md     升版本号后的发版清单
 scripts/canary.mjs  升级后自检（只读扫描会话日志）
 scripts/selftest.mjs 写入面、模型选型与超时诊断的自检

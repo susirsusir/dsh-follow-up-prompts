@@ -2,6 +2,16 @@
 
 把 `package.json` 的版本号往上抬一位之后，还需要走完这份清单。前半段（1–4）在本地完成，5–9 推到 GitHub 并对市场生效，第 10 节是 npm，第 11 节是市场侧。
 
+## 发版前：先把改动写进更新记录
+
+版本变更只记在 `CHANGELOG.md`（中文版 `CHANGELOG.zh-CN.md`，两版同步维护），README 里不再写「What's new」小节——README 讲的是**当前行为**，历史留在更新记录。
+
+- 在 `## [Unreleased]` 下面按 `Added` / `Changed` / `Fixed` / `Removed` 归类写本次改动，条目用粗体起头，说清「以前怎样、现在怎样」，中英文各写一遍；
+- 发版时把 `## [Unreleased]` 改成 `## [<版本>] - <YYYY-MM-DD>`，并在最上面补一个新的空 `## [Unreleased]`；
+- 已有的历史条目不要改写，只追加。
+
+两个更新记录都在 `files` 白名单里，会随包发布。
+
 先看第 0 节确认该不该发版——这条最容易判断错。
 
 ## 0. 什么时候需要升版本
@@ -16,16 +26,6 @@
 | 改了 `package.json` 的 `version` 本身 | 是，且必须打 tag；npm 上也要有同名版本 |
 
 版本号按语义走：修 bug 抬 patch（`1.1.3 → 1.1.4`），加配置项/行为变化抬 minor（`1.1.4 → 1.2.0`）。
-
-## 0. 先把改动写进 `CHANGELOG.md`
-
-版本变更只记在 `CHANGELOG.md`，README 里不再写「What's new」小节——README 讲的是**当前行为**，历史留在 changelog。
-
-- 在 `## [Unreleased]` 下面按 `Added` / `Changed` / `Fixed` / `Removed` 归类写本次改动，条目用粗体起头，说清「以前怎样、现在怎样」；
-- 发版时把 `## [Unreleased]` 改成 `## [<版本>] - <YYYY-MM-DD>`，并在最上面补一个新的空 `## [Unreleased]`；
-- 已有的历史条目不要改写，只追加。
-
-`CHANGELOG.md` 在 `files` 白名单里，会随包发布。
 
 ## 1. 改版本号，并检查 `files` 白名单
 

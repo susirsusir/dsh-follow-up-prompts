@@ -46,7 +46,7 @@ Then restart DeepSeek Harness so the Host and Client halves load. To uninstall, 
 
 ## Changelog
 
-Every release and what changed in it: [CHANGELOG.md](CHANGELOG.md).
+Every release and what changed in it: [CHANGELOG.md](CHANGELOG.md) (Chinese: [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)).
 
 ## How it works
 
@@ -100,6 +100,7 @@ locale/en.json      Display metadata (English)
 locale/zh.json      Display metadata (Chinese)
 docs/DETAIL.md      Detail page shown in the plugin list
 CHANGELOG.md        Release history
+CHANGELOG.zh-CN.md  Release history (Chinese)
 docs/RELEASE.md     Release checklist for bumping a version
 scripts/canary.mjs  Post-upgrade check (read-only session-log scan)
 scripts/selftest.mjs  Fake-host check of the write surface, model selection and timeout

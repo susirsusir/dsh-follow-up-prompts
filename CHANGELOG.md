@@ -2,9 +2,21 @@
 
 All notable changes to `dsh-follow-up-prompts` are recorded here.
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [semantic versioning](https://semver.org/spec/v2.0.0.html). Chinese version: [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md).
 
 ## [Unreleased]
+
+## [1.1.7] - 2026-11-28
+
+### Added
+
+- **`CHANGELOG.md` is now where version history lives.** These notes used to sit in the README, where they drifted from the description of the current state; the README now links here instead.
+- **`CHANGELOG.zh-CN.md` mirrors this file in Chinese**, matching the two bilingual READMEs.
+- **`docs/RELEASE.md` gained a step 0**: write the change under `[Unreleased]` first, then turn it into a version section when releasing.
+
+### Changed
+
+- **The README describes the current version only.** The per-version "What's new" sections are gone and the screenshot moved back into the introduction; history belongs to this file.
 
 ## [1.1.6] - 2026-11-23
 
